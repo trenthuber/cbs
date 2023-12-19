@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -7,6 +8,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#define CBS_LOG(x) printf("%s\n", (x))
+
+#define CBS_ERROR(x) \
+	do { \
+		fprintf(stderr, "\nERROR: %s (%s:%u)\n", (x), __FILE__, __LINE__); \
+		if (errno) perror("INFO"); \
+		fprintf(stderr, "\n"); \
+		exit(1); \
+	} while(0)
+
 typedef struct {
 	char **items;
 	int count;
@@ -14,11 +25,11 @@ typedef struct {
 } Cbs_Cmd;
 
 void cbs_cmd_print(Cbs_Cmd cmd) {
-	for (int i = 0; i < cmd.count; ++i) {
-		printf("\"%s\",\n", cmd.items[i]);
+	printf("  ");
+	for (int i = 0; i < cmd.count - 1; ++i) {
+		printf("%s ", cmd.items[i]);
 	}
-	printf("count: %d\n", cmd.count);
-	printf("cap: %d\n", cmd.capacity);
+	printf("%s\n", cmd.items[cmd.count - 1]);
 }
 
 void cbs_cmd_clear(Cbs_Cmd *cmd) {
@@ -33,15 +44,13 @@ void cbs_cmd_clear(Cbs_Cmd *cmd) {
 void cbs_cmd_append(Cbs_Cmd *cmd, char *string) {
 	if (cmd->capacity == 0) {
 		if ((cmd->items = malloc(sizeof(char *))) == NULL) {
-			perror("process ran out of memory");
-			exit(1);
+			CBS_ERROR("Process ran out of memory");
 		}
 		cmd->capacity = 1;
 	}
 	if (cmd->count >= cmd->capacity) {
 		if ((cmd->items = realloc(cmd->items, 2 * cmd->capacity * sizeof(char *))) == NULL) {
-			perror("process ran out of memory");
-			exit(1);
+			CBS_ERROR("Process ran out of memory");
 		}
 		cmd->capacity *= 2;
 	}
@@ -69,14 +78,13 @@ static void cbs_cmd_build_nt(Cbs_Cmd *cmd, ...) {
 #define cbs_cmd_build(cmd, ...) cbs_cmd_build_nt(cmd, __VA_ARGS__, NULL)
 
 int cbs_cmd_run(Cbs_Cmd *cmd) {
+	cbs_cmd_print(*cmd);
 	cbs_cmd_append(cmd, NULL);
 	pid_t pid = fork();
 	if (pid == 0) {
 		if (execvp(cmd->items[0], cmd->items) == -1) {
 			kill(getppid(), SIGKILL);
-			fprintf(stderr, "cbs did not understand this command: \n");
-			cbs_cmd_print(*cmd);
-			exit(1);
+			CBS_ERROR("Syntax error while running previous command");
 		}
 	}
 	int status = 0;
@@ -85,9 +93,8 @@ int cbs_cmd_run(Cbs_Cmd *cmd) {
 	return status;
 }
 
-static Cbs_Cmd global_cmd = {0};
-
-#define cbs_run(...) (cbs_cmd_build(&global_cmd, __VA_ARGS__), cbs_cmd_run(&global_cmd))
+static Cbs_Cmd dummy_cmd = {0};
+#define cbs_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run(&dummy_cmd))
 
 void cbs_rebuild(int argc, char **argv) {
 	(void) argc;
@@ -109,21 +116,22 @@ void cbs_rebuild(int argc, char **argv) {
 		return;
 	}
 
+	CBS_LOG("Rebuilding cbs");
 	cbs_run("cp", filename, filename_bak);
 	if (cbs_run("cc", "-o", filename, filename_c) != 0) {
-		printf("Recompile unsuccessful\n");
+		CBS_LOG("\nRebuild unsuccessful, undoing backup\n");
 		cbs_run("cp", filename_bak, filename);
 		cbs_run("rm", "-f", filename_bak);
-		exit(1);
+		CBS_ERROR("Unable to rebuild cbs (bootstrapping may be necessary)");
 	} else {
-		printf("Recompile successful\n");
 		cbs_run("rm", "-f", filename_bak);
+		CBS_LOG("\nRebuild successful\n");
+		CBS_LOG("Building project");
 		Cbs_Cmd cmd = {0};
 		cbs_cmd_append(&cmd, filename);
 		cbs_cmd_append(&cmd, NULL);
 		if (execvp(cmd.items[0], cmd.items) == -1) {
-			perror("could not rebuild project");
-			exit(1);
+			CBS_ERROR("Syntax error while running previous command, could not rebuild cbs");
 		}
 	}
 }
@@ -131,7 +139,10 @@ void cbs_rebuild(int argc, char **argv) {
 int main(int argc, char **argv) {
 	cbs_rebuild(argc, argv);
 
-	printf("Hello, world!\n");
+	cbs_run("mkdir", "test");
+	cbs_run("rmdir", "test");
+
+	printf("Hello world!\n");
 
 	return 0;
 }
