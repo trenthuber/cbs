@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -10,88 +11,83 @@ typedef struct {
 	char **items;
 	int count;
 	int capacity;
-} Command;
+} Cbs_Cmd;
 
-void command_print(Command command) {
-	for (int i = 0; i < command.count; ++i) {
-		printf("\"%s\",\n", command.items[i]);
+void cbs_cmd_print(Cbs_Cmd cmd) {
+	for (int i = 0; i < cmd.count; ++i) {
+		printf("\"%s\",\n", cmd.items[i]);
 	}
-	printf("count: %d\n", command.count);
-	printf("cap: %d\n", command.capacity);
+	printf("count: %d\n", cmd.count);
+	printf("cap: %d\n", cmd.capacity);
 }
 
-void command_append(Command *command, char *string) {
-	if (command->capacity == 0) {
-		if ((command->items = malloc(sizeof(char *))) == NULL) {
-			perror("process ran out of memory");
-			exit(1);
-		}
-		command->capacity = 1;
+void cbs_cmd_clear(Cbs_Cmd *cmd) {
+	for (int i = 0; i < cmd->count; ++i) {
+		if (cmd->items[i])
+			free(cmd->items[i]);
 	}
-	if (command->count >= command->capacity) {
-		if ((command->items = realloc(command->items, 2 * command->capacity * sizeof(char *))) == NULL) {
+	if (cmd->items) free(cmd->items);
+	cmd->count = cmd->capacity = 0;
+}
+
+void cbs_cmd_append(Cbs_Cmd *cmd, char *string) {
+	if (cmd->capacity == 0) {
+		if ((cmd->items = malloc(sizeof(char *))) == NULL) {
 			perror("process ran out of memory");
 			exit(1);
 		}
-		command->capacity *= 2;
+		cmd->capacity = 1;
+	}
+	if (cmd->count >= cmd->capacity) {
+		if ((cmd->items = realloc(cmd->items, 2 * cmd->capacity * sizeof(char *))) == NULL) {
+			perror("process ran out of memory");
+			exit(1);
+		}
+		cmd->capacity *= 2;
 	}
 	if (string == NULL) {
-		command->items[command->count++] = NULL;
+		cmd->items[cmd->count++] = NULL;
 		return;
 	}
-	command->items[command->count] = malloc(strlen(string));
-	strcpy(command->items[command->count++], string);
+	cmd->items[cmd->count] = malloc(strlen(string));
+	strcpy(cmd->items[cmd->count++], string);
 }
 
-#define command_multi_append(command, ...) command_multi_append_null_term(command, __VA_ARGS__, NULL)
-
-void command_multi_append_null_term(Command *command, ...) {
+static void cbs_cmd_build_nt(Cbs_Cmd *cmd, ...) {
 	va_list args;
-	va_start(args, command);
+	va_start(args, cmd);
 
 	char *next_arg = va_arg(args, char *);
 	while(next_arg) {
-		command_append(command, next_arg);
+		cbs_cmd_append(cmd, next_arg);
 		next_arg = va_arg(args, char *);
 	}
 
 	va_end(args);
 }
 
-void command_clear(Command *command) {
-	for (int i = 0; i < command->count; ++i) {
-		if (command->items[i])
-			free(command->items[i]);
-	}
-	if (command->items)
-		free(command->items);
-	command->count = command->capacity = 0;
-}
+#define cbs_cmd_build(cmd, ...) cbs_cmd_build_nt(cmd, __VA_ARGS__, NULL)
 
-bool command_execute(Command *command) {
+int cbs_cmd_run(Cbs_Cmd *cmd) {
+	cbs_cmd_append(cmd, NULL);
 	pid_t pid = fork();
 	if (pid == 0) {
-		if (execvp(command->items[0], command->items) == -1) {
-			perror("execve failed");
+		if (execvp(cmd->items[0], cmd->items) == -1) {
+			kill(getppid(), SIGKILL);
+			fprintf(stderr, "cbs did not understand this command: \n");
+			cbs_cmd_print(*cmd);
 			exit(1);
 		}
 	}
 	int status = 0;
 	wait(&status);
-	command_clear(command);
-	return status == 0;
+	cbs_cmd_clear(cmd);
+	return status;
 }
 
-#define cbs_run(...) \
-	do { \
-		Command cmd = {0}; \
-		command_multi_append(&cmd, __VA_ARGS__); \
-		command_append(&cmd, NULL); \
-		if (!command_execute(&cmd)) { \
-			fprintf(stderr, "could not run command at %s(%u)\n", __FILE__, __LINE__); \
-			exit(1); \
-		}; \
-	} while(0)
+static Cbs_Cmd global_cmd = {0};
+
+#define cbs_run(...) (cbs_cmd_build(&global_cmd, __VA_ARGS__), cbs_cmd_run(&global_cmd))
 
 void cbs_rebuild(int argc, char **argv) {
 	(void) argc;
@@ -113,11 +109,8 @@ void cbs_rebuild(int argc, char **argv) {
 		return;
 	}
 
-	Command cmd = {0};
 	cbs_run("cp", filename, filename_bak);
-	command_multi_append(&cmd, "cc", "-o", filename, filename_c);
-	command_append(&cmd, NULL);
-	if (!command_execute(&cmd)) {
+	if (cbs_run("cc", "-o", filename, filename_c) != 0) {
 		printf("Recompile unsuccessful\n");
 		cbs_run("cp", filename_bak, filename);
 		cbs_run("rm", "-f", filename_bak);
@@ -125,8 +118,9 @@ void cbs_rebuild(int argc, char **argv) {
 	} else {
 		printf("Recompile successful\n");
 		cbs_run("rm", "-f", filename_bak);
-		command_multi_append(&cmd, filename);
-		command_append(&cmd, NULL);
+		Cbs_Cmd cmd = {0};
+		cbs_cmd_append(&cmd, filename);
+		cbs_cmd_append(&cmd, NULL);
 		if (execvp(cmd.items[0], cmd.items) == -1) {
 			perror("could not rebuild project");
 			exit(1);
