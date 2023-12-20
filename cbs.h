@@ -16,7 +16,8 @@ typedef struct {
 		exit(1); \
 	} while(0)
 
-#define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
+#define cbs_str_eq(str1, str2) strcmp(str1, str2) == 0
+char *cbs_shift_args(int *argc_p, char ***argv_p);
 void cbs_cmd_print(Cbs_Cmd cmd);
 void cbs_cmd_clear(Cbs_Cmd *cmd);
 void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
@@ -24,6 +25,7 @@ void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
 int cbs_cmd_run(Cbs_Cmd *cmd);
 static Cbs_Cmd dummy_cmd = {0};
 #define cbs_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run(&dummy_cmd))
+#define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
 void cbs_rebuild_self(int argc, char **argv);
 
 #endif // _CBS_H_
@@ -40,26 +42,12 @@ void cbs_rebuild_self(int argc, char **argv);
 #include <sys/stat.h>
 #include <unistd.h>
 
-static bool cbs_needs_rebuild_nt(char *target, ...) {
-	va_list args;
-	va_start(args, target);
-
-	struct stat temp;
-	stat(target, &temp);
-	__darwin_time_t tar_mtime = temp.st_mtime;
-	char *dependency = va_arg(args, char *);
-	while (dependency) {
-		stat(dependency, &temp);
-		__darwin_time_t dep_mtime = temp.st_mtime;
-		if (tar_mtime < dep_mtime) {
-			va_end(args);
-			return true;
-		}
-		dependency = va_arg(args, char *);
+char *cbs_shift_args(int *argc_p, char ***argv_p) {
+	if (*argc_p == 0) {
+		return NULL;
 	}
-
-	va_end(args);
-	return false;
+	--(*argc_p);
+	return *((*argv_p)++);
 }
 
 void cbs_cmd_print(Cbs_Cmd cmd) {
@@ -127,6 +115,33 @@ int cbs_cmd_run(Cbs_Cmd *cmd) {
 	return status;
 }
 
+static bool cbs_needs_rebuild_nt(char *target, ...) {
+	struct stat temp;
+	if (stat(target, &temp) == -1) {
+		return true;
+	}
+	__darwin_time_t tar_mtime = temp.st_mtime;
+
+	va_list args;
+	va_start(args, target);
+
+	char *dependency = va_arg(args, char *);
+	while (dependency) {
+		if (stat(dependency, &temp) == -1) {
+			CBS_ERROR("Could not open dependency when checking target rebuild");
+		}
+		__darwin_time_t dep_mtime = temp.st_mtime;
+		if (tar_mtime < dep_mtime) {
+			va_end(args);
+			return true;
+		}
+		dependency = va_arg(args, char *);
+	}
+
+	va_end(args);
+	return false;
+}
+
 void cbs_rebuild_self(int argc, char **argv) {
 	(void) argc;
 
@@ -146,17 +161,6 @@ void cbs_rebuild_self(int argc, char **argv) {
 		return;
 	}
 
-	// struct stat temp;
-	// stat(filename, &temp);
-	// __darwin_time_t mtime = temp.st_mtime;
-	// stat(c_filename, &temp);
-	// __darwin_time_t c_mtime = temp.st_mtime;
-	// stat(h_filename, &temp);
-	// __darwin_time_t h_mtime = temp.st_mtime;
-	// if (mtime > c_mtime && mtime > h_mtime) {
-	// 	return;
-	// }
-
 	CBS_LOG("Rebuilding cbs");
 	cbs_run("cp", filename, backup_filename);
 	if (cbs_run("cc", "-o", filename, c_filename) != 0) {
@@ -167,10 +171,7 @@ void cbs_rebuild_self(int argc, char **argv) {
 	}
 	cbs_run("rm", "-f", backup_filename);
 	CBS_LOG("Rebuild successful");
-	Cbs_Cmd cmd = {0};
-	cbs_cmd_append(&cmd, filename);
-	cbs_cmd_append(&cmd, NULL);
-	if (execvp(cmd.items[0], cmd.items) == -1) {
+	if (execvp(filename, argv) == -1) {
 		CBS_ERROR("Syntax error while running previous command, could not rebuild cbs");
 	}
 }
