@@ -16,6 +16,7 @@ typedef struct {
 		exit(1); \
 	} while(0)
 
+#define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
 void cbs_cmd_print(Cbs_Cmd cmd);
 void cbs_cmd_clear(Cbs_Cmd *cmd);
 void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
@@ -23,7 +24,7 @@ void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
 int cbs_cmd_run(Cbs_Cmd *cmd);
 static Cbs_Cmd dummy_cmd = {0};
 #define cbs_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run(&dummy_cmd))
-void cbs_rebuild(int argc, char **argv);
+void cbs_rebuild_self(int argc, char **argv);
 
 #endif // _CBS_H_
 
@@ -38,6 +39,28 @@ void cbs_rebuild(int argc, char **argv);
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+static bool cbs_needs_rebuild_nt(char *target, ...) {
+	va_list args;
+	va_start(args, target);
+
+	struct stat temp;
+	stat(target, &temp);
+	__darwin_time_t tar_mtime = temp.st_mtime;
+	char *dependency = va_arg(args, char *);
+	while (dependency) {
+		stat(dependency, &temp);
+		__darwin_time_t dep_mtime = temp.st_mtime;
+		if (tar_mtime < dep_mtime) {
+			va_end(args);
+			return true;
+		}
+		dependency = va_arg(args, char *);
+	}
+
+	va_end(args);
+	return false;
+}
 
 void cbs_cmd_print(Cbs_Cmd cmd) {
 	printf("  ");
@@ -104,7 +127,7 @@ int cbs_cmd_run(Cbs_Cmd *cmd) {
 	return status;
 }
 
-void cbs_rebuild(int argc, char **argv) {
+void cbs_rebuild_self(int argc, char **argv) {
 	(void) argc;
 
 	char *backup_ext = ".bak", *c_ext = ".c", *h_ext = ".h", *filename = argv[0];
@@ -119,28 +142,31 @@ void cbs_rebuild(int argc, char **argv) {
 	strcpy(h_filename, filename);
 	strcat(h_filename, h_ext);
 
-	struct stat temp;
-	stat(filename, &temp);
-	__darwin_time_t mtime = temp.st_mtime;
-	stat(c_filename, &temp);
-	__darwin_time_t c_mtime = temp.st_mtime;
-	stat(h_filename, &temp);
-	__darwin_time_t h_mtime = temp.st_mtime;
-	if (mtime > c_mtime && mtime > h_mtime) {
+	if (!cbs_needs_rebuild(filename, c_filename, h_filename)) {
 		return;
 	}
+
+	// struct stat temp;
+	// stat(filename, &temp);
+	// __darwin_time_t mtime = temp.st_mtime;
+	// stat(c_filename, &temp);
+	// __darwin_time_t c_mtime = temp.st_mtime;
+	// stat(h_filename, &temp);
+	// __darwin_time_t h_mtime = temp.st_mtime;
+	// if (mtime > c_mtime && mtime > h_mtime) {
+	// 	return;
+	// }
 
 	CBS_LOG("Rebuilding cbs");
 	cbs_run("cp", filename, backup_filename);
 	if (cbs_run("cc", "-o", filename, c_filename) != 0) {
-		CBS_LOG("\nRebuild unsuccessful, undoing backup\n");
+		CBS_LOG("Rebuild unsuccessful, undoing backup");
 		cbs_run("cp", backup_filename, filename);
 		cbs_run("rm", "-f", backup_filename);
 		CBS_ERROR("Unable to rebuild cbs (bootstrapping may be necessary)");
 	}
 	cbs_run("rm", "-f", backup_filename);
-	CBS_LOG("\nRebuild successful\n");
-	CBS_LOG("Building project");
+	CBS_LOG("Rebuild successful");
 	Cbs_Cmd cmd = {0};
 	cbs_cmd_append(&cmd, filename);
 	cbs_cmd_append(&cmd, NULL);
