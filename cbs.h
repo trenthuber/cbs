@@ -2,12 +2,19 @@
 #define _CBS_H_
 
 #include <stdbool.h>
+#include <unistd.h>
 
 typedef struct {
 	char **items;
 	int count;
 	int capacity;
 } Cbs_Cmd;
+
+typedef struct {
+	pid_t *items;
+	int count;
+	int capacity;
+} Cbs_Pids;
 
 #define CBS_LOG(x) printf("%s\n", x)
 #define CBS_ERROR(x) \
@@ -18,18 +25,37 @@ typedef struct {
 		exit(1); \
 	} while(0)
 
+#define CBS_DA_APPEND(da, item) \
+	do { \
+		if ((da)->capacity == 0) { \
+			if (((da)->items = malloc(sizeof(item))) == NULL) \
+				CBS_ERROR("Process ran out of memory"); \
+			(da)->capacity = 1; \
+		} \
+		if ((da)->count >= (da)->capacity) { \
+			if (((da)->items = realloc((da)->items, 2 * (da)->capacity * sizeof(*(da)->items))) == NULL) \
+				CBS_ERROR("Process ran out of memory"); \
+			(da)->capacity *= 2; \
+		} \
+		(da)->items[(da)->count++] = item; \
+	} while(0)
+
 void cbs_rebuild_self(int argc, char **argv);
 char *cbs_shift_args(int *argc_p, char ***argv_p);
 #define cbs_str_eq(str1, str2) strcmp(str1, str2) == 0
 bool cbs_file_exists(char *file);
 #define cbs_files_exist(file, ...) cbs_files_exist_nt(file, __VA_ARGS__, NULL)
 #define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
-void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
+#define cbs_cmd_append(cmd, string) CBS_DA_APPEND(cmd, string)
 #define cbs_cmd_build(cmd, ...) cbs_cmd_build_nt(cmd, __VA_ARGS__, NULL)
 void cbs_cmd_print(Cbs_Cmd cmd);
 void cbs_cmd_clear(Cbs_Cmd *cmd);
 int cbs_cmd_run(Cbs_Cmd *cmd);
 #define cbs_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run(&dummy_cmd))
+pid_t cbs_cmd_run_async(Cbs_Cmd *cmd);
+#define cbs_run_async(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run_async(&dummy_cmd))
+#define cbs_pids_append(pids, pid) CBS_DA_APPEND(pids, pid)
+int *cbs_pids_wait(Cbs_Pids *pids);
 
 #endif // _CBS_H_
 
@@ -43,7 +69,6 @@ int cbs_cmd_run(Cbs_Cmd *cmd);
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 Cbs_Cmd dummy_cmd = {0};
 
@@ -110,25 +135,6 @@ bool cbs_needs_rebuild_nt(char *target, ...) {
 	return false;
 }
 
-void cbs_cmd_append(Cbs_Cmd *cmd, char *string) {
-	if (cmd->capacity == 0) {
-		if ((cmd->items = malloc(sizeof(char *))) == NULL)
-			CBS_ERROR("Process ran out of memory");
-		cmd->capacity = 1;
-	}
-	if (cmd->count >= cmd->capacity) {
-		if ((cmd->items = realloc(cmd->items, 2 * cmd->capacity * sizeof(char *))) == NULL)
-			CBS_ERROR("Process ran out of memory");
-		cmd->capacity *= 2;
-	}
-	if (string == NULL) {
-		cmd->items[cmd->count++] = NULL;
-		return;
-	}
-	cmd->items[cmd->count] = malloc(strlen(string));
-	strcpy(cmd->items[cmd->count++], string);
-}
-
 void cbs_cmd_build_nt(Cbs_Cmd *cmd, ...) {
 	va_list args;
 	va_start(args, cmd);
@@ -151,15 +157,18 @@ void cbs_cmd_print(Cbs_Cmd cmd) {
 }
 
 void cbs_cmd_clear(Cbs_Cmd *cmd) {
-	for (int i = 0; i < cmd->count; ++i) {
-		if (cmd->items[i])
-			free(cmd->items[i]);
-	}
 	if (cmd->items) free(cmd->items);
 	cmd->count = cmd->capacity = 0;
 }
 
 int cbs_cmd_run(Cbs_Cmd *cmd) {
+	pid_t c_pid = cbs_cmd_run_async(cmd);
+	int status = 0;
+	waitpid(c_pid, &status, 0);
+	return status;
+}
+
+pid_t cbs_cmd_run_async(Cbs_Cmd *cmd) {
 	cbs_cmd_print(*cmd);
 	cbs_cmd_append(cmd, NULL);
 	pid_t pid = fork();
@@ -169,14 +178,18 @@ int cbs_cmd_run(Cbs_Cmd *cmd) {
 			CBS_ERROR("Syntax error while running previous command");
 		}
 	}
-	int status = 0;
-	wait(&status);
 	cbs_cmd_clear(cmd);
-	return status;
+	return pid;
 }
 
-// Thread pool stuff HERE
-
+int *cbs_pids_wait(Cbs_Pids *pids) {
+	if (pids->count == 0) return NULL;
+	int *statuses = calloc(pids->count, sizeof(int));
+	for (int i = 0; i < pids->count; ++i) {
+		waitpid(pids->items[i], &statuses[i], 0);
+	}
+	return statuses;
+}
 
 void cbs_rebuild_self(int argc, char **argv) {
 	(void) argc;
