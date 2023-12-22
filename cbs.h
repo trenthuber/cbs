@@ -8,7 +8,6 @@ typedef struct {
 	int count;
 	int capacity;
 } Cbs_Cmd;
-static Cbs_Cmd dummy_cmd = {0};
 
 #define CBS_LOG(x) printf("%s\n", x)
 #define CBS_ERROR(x) \
@@ -19,18 +18,18 @@ static Cbs_Cmd dummy_cmd = {0};
 		exit(1); \
 	} while(0)
 
-#define cbs_str_eq(str1, str2) strcmp(str1, str2) == 0
+void cbs_rebuild_self(int argc, char **argv);
 char *cbs_shift_args(int *argc_p, char ***argv_p);
+#define cbs_str_eq(str1, str2) strcmp(str1, str2) == 0
 bool cbs_file_exists(char *file);
 #define cbs_files_exist(file, ...) cbs_files_exist_nt(file, __VA_ARGS__, NULL)
-void cbs_cmd_print(Cbs_Cmd cmd);
-void cbs_cmd_clear(Cbs_Cmd *cmd);
+#define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
 void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
 #define cbs_cmd_build(cmd, ...) cbs_cmd_build_nt(cmd, __VA_ARGS__, NULL)
+void cbs_cmd_print(Cbs_Cmd cmd);
+void cbs_cmd_clear(Cbs_Cmd *cmd);
 int cbs_cmd_run(Cbs_Cmd *cmd);
 #define cbs_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run(&dummy_cmd))
-#define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
-void cbs_rebuild_self(int argc, char **argv);
 
 #endif // _CBS_H_
 
@@ -45,6 +44,8 @@ void cbs_rebuild_self(int argc, char **argv);
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+Cbs_Cmd dummy_cmd = {0};
 
 char *cbs_shift_args(int *argc_p, char ***argv_p) {
 	if (*argc_p == 0) {
@@ -65,7 +66,7 @@ bool cbs_file_exists(char *file) {
 	return true;
 }
 
-static bool cbs_files_exist_nt(char *file, ...) {
+bool cbs_files_exist_nt(char *file, ...) {
 	if (!cbs_file_exists(file)) {
 		return false;
 	}
@@ -82,72 +83,7 @@ static bool cbs_files_exist_nt(char *file, ...) {
 	return true;
 }
 
-void cbs_cmd_print(Cbs_Cmd cmd) {
-	printf("  ");
-	for (int i = 0; i < cmd.count - 1; ++i) {
-		printf("%s ", cmd.items[i]);
-	}
-	printf("%s\n", cmd.items[cmd.count - 1]);
-}
-
-void cbs_cmd_clear(Cbs_Cmd *cmd) {
-	for (int i = 0; i < cmd->count; ++i) {
-		if (cmd->items[i])
-			free(cmd->items[i]);
-	}
-	if (cmd->items) free(cmd->items);
-	cmd->count = cmd->capacity = 0;
-}
-
-void cbs_cmd_append(Cbs_Cmd *cmd, char *string) {
-	if (cmd->capacity == 0) {
-		if ((cmd->items = malloc(sizeof(char *))) == NULL)
-			CBS_ERROR("Process ran out of memory");
-		cmd->capacity = 1;
-	}
-	if (cmd->count >= cmd->capacity) {
-		if ((cmd->items = realloc(cmd->items, 2 * cmd->capacity * sizeof(char *))) == NULL)
-			CBS_ERROR("Process ran out of memory");
-		cmd->capacity *= 2;
-	}
-	if (string == NULL) {
-		cmd->items[cmd->count++] = NULL;
-		return;
-	}
-	cmd->items[cmd->count] = malloc(strlen(string));
-	strcpy(cmd->items[cmd->count++], string);
-}
-
-static void cbs_cmd_build_nt(Cbs_Cmd *cmd, ...) {
-	va_list args;
-	va_start(args, cmd);
-
-	char *next_arg = va_arg(args, char *);
-	while(next_arg) {
-		cbs_cmd_append(cmd, next_arg);
-		next_arg = va_arg(args, char *);
-	}
-
-	va_end(args);
-}
-
-int cbs_cmd_run(Cbs_Cmd *cmd) {
-	cbs_cmd_print(*cmd);
-	cbs_cmd_append(cmd, NULL);
-	pid_t pid = fork();
-	if (pid == 0) {
-		if (execvp(cmd->items[0], cmd->items) == -1) {
-			kill(getppid(), SIGKILL);
-			CBS_ERROR("Syntax error while running previous command");
-		}
-	}
-	int status = 0;
-	wait(&status);
-	cbs_cmd_clear(cmd);
-	return status;
-}
-
-static bool cbs_needs_rebuild_nt(char *target, ...) {
+bool cbs_needs_rebuild_nt(char *target, ...) {
 	struct stat temp;
 	if (stat(target, &temp) == -1) {
 		return true;
@@ -174,28 +110,89 @@ static bool cbs_needs_rebuild_nt(char *target, ...) {
 	return false;
 }
 
+void cbs_cmd_append(Cbs_Cmd *cmd, char *string) {
+	if (cmd->capacity == 0) {
+		if ((cmd->items = malloc(sizeof(char *))) == NULL)
+			CBS_ERROR("Process ran out of memory");
+		cmd->capacity = 1;
+	}
+	if (cmd->count >= cmd->capacity) {
+		if ((cmd->items = realloc(cmd->items, 2 * cmd->capacity * sizeof(char *))) == NULL)
+			CBS_ERROR("Process ran out of memory");
+		cmd->capacity *= 2;
+	}
+	if (string == NULL) {
+		cmd->items[cmd->count++] = NULL;
+		return;
+	}
+	cmd->items[cmd->count] = malloc(strlen(string));
+	strcpy(cmd->items[cmd->count++], string);
+}
+
+void cbs_cmd_build_nt(Cbs_Cmd *cmd, ...) {
+	va_list args;
+	va_start(args, cmd);
+
+	char *next_arg = va_arg(args, char *);
+	while(next_arg) {
+		cbs_cmd_append(cmd, next_arg);
+		next_arg = va_arg(args, char *);
+	}
+
+	va_end(args);
+}
+
+void cbs_cmd_print(Cbs_Cmd cmd) {
+	printf("  ");
+	for (int i = 0; i < cmd.count - 1; ++i) {
+		printf("%s ", cmd.items[i]);
+	}
+	printf("%s\n", cmd.items[cmd.count - 1]);
+}
+
+void cbs_cmd_clear(Cbs_Cmd *cmd) {
+	for (int i = 0; i < cmd->count; ++i) {
+		if (cmd->items[i])
+			free(cmd->items[i]);
+	}
+	if (cmd->items) free(cmd->items);
+	cmd->count = cmd->capacity = 0;
+}
+
+int cbs_cmd_run(Cbs_Cmd *cmd) {
+	cbs_cmd_print(*cmd);
+	cbs_cmd_append(cmd, NULL);
+	pid_t pid = fork();
+	if (pid == 0) {
+		if (execvp(cmd->items[0], cmd->items) == -1) {
+			kill(getppid(), SIGKILL);
+			CBS_ERROR("Syntax error while running previous command");
+		}
+	}
+	int status = 0;
+	wait(&status);
+	cbs_cmd_clear(cmd);
+	return status;
+}
+
+// Thread pool stuff HERE
+
+
 void cbs_rebuild_self(int argc, char **argv) {
 	(void) argc;
 
-	char *backup_ext = ".bak", *c_ext = ".c", *h_ext = ".h", *filename = argv[0];
-
+	char *filename = argv[0], *backup_ext = ".bak";
 	char *backup_filename = calloc(strlen(filename) + strlen(backup_ext), sizeof(char));
 	strcpy(backup_filename, filename);
 	strcat(backup_filename, backup_ext);
-	char *c_filename = calloc(strlen(filename) + strlen(c_ext), sizeof(char));
-	strcpy(c_filename, filename);
-	strcat(c_filename, c_ext);
-	char *h_filename = calloc(strlen(filename) + strlen(c_ext), sizeof(char));
-	strcpy(h_filename, filename);
-	strcat(h_filename, h_ext);
 
-	if (!cbs_needs_rebuild(filename, c_filename, h_filename)) {
+	if (!cbs_needs_rebuild(filename, "cbs.c", "cbs.h")) {
 		return;
 	}
 
 	CBS_LOG("Rebuilding cbs");
 	cbs_run("cp", filename, backup_filename);
-	if (cbs_run("cc", "-o", filename, c_filename) != 0) {
+	if (cbs_run("cc", "-o", filename, "cbs.c") != 0) {
 		CBS_LOG("Rebuild unsuccessful, undoing backup");
 		cbs_run("cp", backup_filename, filename);
 		cbs_run("rm", "-f", backup_filename);
