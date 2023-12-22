@@ -1,16 +1,19 @@
 #ifndef _CBS_H_
 #define _CBS_H_
 
+#include <stdbool.h>
+
 typedef struct {
 	char **items;
 	int count;
 	int capacity;
 } Cbs_Cmd;
+static Cbs_Cmd dummy_cmd = {0};
 
-#define CBS_LOG(x) printf("%s\n", (x))
+#define CBS_LOG(x) printf("%s\n", x)
 #define CBS_ERROR(x) \
 	do { \
-		fprintf(stderr, "\nERROR: %s (%s:%u)\n", (x), __FILE__, __LINE__); \
+		fprintf(stderr, "\nERROR: %s (%s:%u)\n", x, __FILE__, __LINE__); \
 		if (errno) perror("INFO"); \
 		fprintf(stderr, "\n"); \
 		exit(1); \
@@ -18,12 +21,13 @@ typedef struct {
 
 #define cbs_str_eq(str1, str2) strcmp(str1, str2) == 0
 char *cbs_shift_args(int *argc_p, char ***argv_p);
+bool cbs_file_exists(char *file);
+#define cbs_files_exist(file, ...) cbs_files_exist_nt(file, __VA_ARGS__, NULL)
 void cbs_cmd_print(Cbs_Cmd cmd);
 void cbs_cmd_clear(Cbs_Cmd *cmd);
 void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
 #define cbs_cmd_build(cmd, ...) cbs_cmd_build_nt(cmd, __VA_ARGS__, NULL)
 int cbs_cmd_run(Cbs_Cmd *cmd);
-static Cbs_Cmd dummy_cmd = {0};
 #define cbs_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run(&dummy_cmd))
 #define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
 void cbs_rebuild_self(int argc, char **argv);
@@ -48,6 +52,34 @@ char *cbs_shift_args(int *argc_p, char ***argv_p) {
 	}
 	--(*argc_p);
 	return *((*argv_p)++);
+}
+
+bool cbs_file_exists(char *file) {
+	struct stat temp;
+	if (stat(file, &temp) == -1) {
+		if (errno == ENOENT) {
+			return false;
+		}
+		CBS_ERROR("Could not access file");
+	}
+	return true;
+}
+
+static bool cbs_files_exist_nt(char *file, ...) {
+	if (!cbs_file_exists(file)) {
+		return false;
+	}
+	va_list args;
+	va_start(args, file);
+	char *arg;
+	while ((arg = va_arg(args, char *))) {
+		if (!cbs_file_exists(arg)) {
+			va_end(args);
+			return false;
+		}
+	}
+	va_end(args);
+	return true;
 }
 
 void cbs_cmd_print(Cbs_Cmd cmd) {

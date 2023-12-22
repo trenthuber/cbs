@@ -9,11 +9,14 @@ int main(int argc, char **argv) {
 	while ((current_arg = cbs_shift_args(&argc, &argv))) {
 		if (cbs_str_eq(current_arg, "build")) {
 			cbs_run("mkdir", "-p", "build");
-			if (cbs_needs_rebuild("./build/hello", "./build", "hello.c")) {
+			if (cbs_needs_rebuild("./build/hello", "hello.c")) {
 				cbs_run("cc", "-o", "./build/hello", "hello.c");
 			}
 		} else if(cbs_str_eq(current_arg, "run")) {
-			cbs_run("./build/hello");
+			if (cbs_file_exists("./build/hello"))
+				cbs_run("./build/hello");
+			else
+				CBS_LOG("File not found, nothing to run");
 		} else if(cbs_str_eq(current_arg, "clean")) {
 			cbs_run("rm", "-rf", "build");
 		} else {
