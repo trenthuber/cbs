@@ -2,6 +2,7 @@
 #define _CBS_H_
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <unistd.h>
 
 typedef struct {
@@ -11,13 +12,19 @@ typedef struct {
 } Cbs_Cmd;
 
 typedef struct {
-	pid_t *items;
+	Cbs_Cmd cmd;
+	FILE *output;
+	pid_t pid;
+} Cbs_Proc_Info;
+
+typedef struct {
+	Cbs_Proc_Info *items;
 	int count;
 	int capacity;
-} Cbs_Pids;
+} Cbs_Proc_Infos;
 
-#define CBS_LOG(x) printf("%s\n", x)
-#define CBS_ERROR(x) \
+#define cbs_log(x) printf("%s\n", x)
+#define cbs_error(x) \
 	do { \
 		fprintf(stderr, "\nERROR: %s (%s:%u)\n", x, __FILE__, __LINE__); \
 		if (errno) perror("INFO"); \
@@ -25,47 +32,39 @@ typedef struct {
 		exit(1); \
 	} while(0)
 
-#define CBS_DA_APPEND(da, item) \
-	do { \
-		if ((da)->capacity == 0) { \
-			if (((da)->items = malloc(sizeof(item))) == NULL) \
-				CBS_ERROR("Process ran out of memory"); \
-			(da)->capacity = 1; \
-		} \
-		if ((da)->count >= (da)->capacity) { \
-			if (((da)->items = realloc((da)->items, 2 * (da)->capacity * sizeof(*(da)->items))) == NULL) \
-				CBS_ERROR("Process ran out of memory"); \
-			(da)->capacity *= 2; \
-		} \
-		(da)->items[(da)->count++] = item; \
-	} while(0)
-
-void cbs_rebuild_self(int argc, char **argv);
+void cbs_rebuild_self(char **argv);
 char *cbs_shift_args(int *argc_p, char ***argv_p);
 #define cbs_str_eq(str1, str2) strcmp(str1, str2) == 0
 bool cbs_file_exists(char *file);
 #define cbs_files_exist(file, ...) cbs_files_exist_nt(file, __VA_ARGS__, NULL)
 #define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
-#define cbs_cmd_append(cmd, string) CBS_DA_APPEND(cmd, string)
+void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
 #define cbs_cmd_build(cmd, ...) cbs_cmd_build_nt(cmd, __VA_ARGS__, NULL)
 void cbs_cmd_print(Cbs_Cmd cmd);
 void cbs_cmd_clear(Cbs_Cmd *cmd);
-int cbs_cmd_run(Cbs_Cmd *cmd);
-#define cbs_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run(&dummy_cmd))
-pid_t cbs_cmd_run_async(Cbs_Cmd *cmd);
-#define cbs_run_async(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_run_async(&dummy_cmd))
-#define cbs_pids_append(pids, pid) CBS_DA_APPEND(pids, pid)
-int *cbs_pids_wait(Cbs_Pids *pids);
+bool cbs_cmd_try_run(Cbs_Cmd *cmd);
+void cbs_cmd_run(Cbs_Cmd *cmd);
+#define cbs_try_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_try_run(&dummy_cmd))
+#define cbs_run(...) \
+	do { \
+		cbs_cmd_build(&dummy_cmd, __VA_ARGS__); \
+		cbs_cmd_run(&dummy_cmd); \
+	} while(0)
+Cbs_Proc_Info cbs_cmd_async_run(Cbs_Cmd *cmd);
+#define cbs_async_run(...) (cbs_cmd_build(&dummy_cmd, __VA_ARGS__), cbs_cmd_async_run(&dummy_cmd))
+void cbs_proc_infos_append(Cbs_Proc_Infos *procs, Cbs_Proc_Info proc);
+#define cbs_proc_infos_append_many(procs, ...) cbs_proc_infos_append_many_zt(procs, __VA_ARGS__, (Cbs_Proc_Info) {0})
+void cbs_async_wait(Cbs_Proc_Infos *procs);
 
 #endif // _CBS_H_
 
 #ifdef CBS_IMPLEMENTATION
 
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -86,7 +85,7 @@ bool cbs_file_exists(char *file) {
 		if (errno == ENOENT) {
 			return false;
 		}
-		CBS_ERROR("Could not access file");
+		cbs_error("Could not access file");
 	}
 	return true;
 }
@@ -121,7 +120,7 @@ bool cbs_needs_rebuild_nt(char *target, ...) {
 	char *dependency = va_arg(args, char *);
 	while (dependency) {
 		if (stat(dependency, &temp) == -1) {
-			CBS_ERROR("Could not open dependency when checking target rebuild");
+			cbs_error("Could not open dependency when checking target rebuild");
 		}
 		__darwin_time_t dep_mtime = temp.st_mtime;
 		if (tar_mtime < dep_mtime) {
@@ -133,6 +132,20 @@ bool cbs_needs_rebuild_nt(char *target, ...) {
 
 	va_end(args);
 	return false;
+}
+
+void cbs_cmd_append(Cbs_Cmd *cmd, char *string) {
+	if (cmd->capacity == 0) {
+		if ((cmd->items = malloc(sizeof(*cmd->items))) == NULL)
+			cbs_error("Process ran out of memory");
+		cmd->capacity = 1;
+	}
+	if (cmd->count >= cmd->capacity) {
+		if ((cmd->items = realloc(cmd->items, 2 * cmd->capacity * sizeof(*cmd->items))) == NULL)
+			cbs_error("Process ran out of memory");
+		cmd->capacity *= 2;
+	}
+	cmd->items[cmd->count++] = string;
 }
 
 void cbs_cmd_build_nt(Cbs_Cmd *cmd, ...) {
@@ -161,39 +174,97 @@ void cbs_cmd_clear(Cbs_Cmd *cmd) {
 	cmd->count = cmd->capacity = 0;
 }
 
-int cbs_cmd_run(Cbs_Cmd *cmd) {
-	pid_t c_pid = cbs_cmd_run_async(cmd);
+void cbs_cmd_run(Cbs_Cmd *cmd) {
+	Cbs_Proc_Info proc = cbs_cmd_async_run(cmd);
+	Cbs_Proc_Infos procs = {0};
+	cbs_proc_infos_append(&procs, proc);
+	cbs_async_wait(&procs);
+}
+
+static void cbs_file_print_to_stdout(FILE *file) {
+	fseek(file, 0, SEEK_END);
+	long filesize = ftell(file);
+	if (filesize) {
+		char *buffer = malloc(filesize * sizeof(char));
+		if (buffer == NULL) cbs_error("Process ran out of memory");
+		fseek(file, 0, SEEK_SET);
+		fread(buffer, filesize, 1, file);
+		fwrite(buffer, filesize, 1, stdout);
+		free(buffer);
+	}
+}
+
+bool cbs_cmd_try_run(Cbs_Cmd *cmd) {
+	Cbs_Proc_Info proc = cbs_cmd_async_run(cmd);
 	int status = 0;
-	waitpid(c_pid, &status, 0);
-	return status;
+	waitpid(proc.pid, &status, 0);
+	cbs_cmd_print(proc.cmd);
+	if (status) cbs_log("Previous command ran unsuccessfully, continuing build");
+	else cbs_file_print_to_stdout(proc.output);
+	return !status;
 }
 
-pid_t cbs_cmd_run_async(Cbs_Cmd *cmd) {
-	cbs_cmd_print(*cmd);
+Cbs_Proc_Info cbs_cmd_async_run(Cbs_Cmd *cmd) {
+	Cbs_Proc_Info result = {0};
+	result.cmd = *cmd;
+	result.cmd.items = malloc(cmd->capacity * sizeof(char *));
+	memcpy(result.cmd.items, cmd->items, cmd->count * sizeof(char *));
+	result.output = tmpfile();
+
 	cbs_cmd_append(cmd, NULL);
-	pid_t pid = fork();
-	if (pid == 0) {
-		if (execvp(cmd->items[0], cmd->items) == -1) {
-			kill(getppid(), SIGKILL);
-			CBS_ERROR("Syntax error while running previous command");
-		}
+
+	if ((result.pid = fork()) == 0) {
+		dup2(fileno(result.output), STDOUT_FILENO);
+		dup2(fileno(result.output), STDERR_FILENO);
+		if (execvp(cmd->items[0], cmd->items) == -1) exit(1);
 	}
+
 	cbs_cmd_clear(cmd);
-	return pid;
+	return result;
 }
 
-int *cbs_pids_wait(Cbs_Pids *pids) {
-	if (pids->count == 0) return NULL;
-	int *statuses = calloc(pids->count, sizeof(int));
-	for (int i = 0; i < pids->count; ++i) {
-		waitpid(pids->items[i], &statuses[i], 0);
+void cbs_proc_infos_append(Cbs_Proc_Infos *procs, Cbs_Proc_Info proc) {
+	if (procs->capacity == 0) {
+		if ((procs->items = malloc(sizeof(Cbs_Proc_Info))) == NULL)
+			cbs_error("Process ran out of memory");
+		procs->capacity = 1;
 	}
-	return statuses;
+	if (procs->count >= procs->capacity) {
+		if ((procs->items = realloc(procs->items, 2 * procs->capacity * sizeof(*procs->items))) == NULL)
+			cbs_error("Process ran out of memory");
+		procs->capacity *= 2;
+	}
+	procs->items[procs->count++] = proc;
 }
 
-void cbs_rebuild_self(int argc, char **argv) {
-	(void) argc;
+void cbs_proc_infos_append_many_zt(Cbs_Proc_Infos *procs, ...) {
+	va_list args;
+	va_start(args, procs);
+	Cbs_Proc_Info proc = va_arg(args, Cbs_Proc_Info);
+	while (proc.output) {
+		cbs_proc_infos_append(procs, proc);
+		proc = va_arg(args, Cbs_Proc_Info);
+	}
+	va_end(args);
+}
 
+void cbs_async_wait(Cbs_Proc_Infos *procs) {
+	if (procs == NULL || procs->count == 0) return;
+	int status = 0;
+	long filesize = 0;
+	char *buffer;
+	for (int i = 0; i < procs->count; ++i) {
+		Cbs_Proc_Info proc = procs->items[i];
+		waitpid(proc.pid, &status, 0);
+		cbs_cmd_print(proc.cmd);
+		cbs_file_print_to_stdout(proc.output);
+		if (status) cbs_error("Previous command ran unsuccessfully, stopping build");
+	}
+	free(procs->items);
+	procs->count = procs->capacity = 0;
+}
+
+void cbs_rebuild_self(char **argv) {
 	char *filename = argv[0], *backup_ext = ".bak";
 	char *backup_filename = calloc(strlen(filename) + strlen(backup_ext), sizeof(char));
 	strcpy(backup_filename, filename);
@@ -203,18 +274,18 @@ void cbs_rebuild_self(int argc, char **argv) {
 		return;
 	}
 
-	CBS_LOG("Rebuilding cbs");
+	cbs_log("Rebuilding cbs");
 	cbs_run("cp", filename, backup_filename);
-	if (cbs_run("cc", "-o", filename, "cbs.c") != 0) {
-		CBS_LOG("Rebuild unsuccessful, undoing backup");
+	if (!cbs_try_run("cc", "-o", filename, "cbs.c")) {
+		cbs_log("Rebuild unsuccessful, undoing backup");
 		cbs_run("cp", backup_filename, filename);
 		cbs_run("rm", "-f", backup_filename);
-		CBS_ERROR("Unable to rebuild cbs (bootstrapping may be necessary)");
+		cbs_error("Unable to rebuild cbs (bootstrapping may be necessary)");
 	}
 	cbs_run("rm", "-f", backup_filename);
-	CBS_LOG("Rebuild successful");
+	cbs_log("Rebuild successful");
 	if (execvp(filename, argv) == -1) {
-		CBS_ERROR("Syntax error while running previous command, could not rebuild cbs");
+		cbs_error("Syntax error while running previous command, could not rebuild cbs");
 	}
 }
 

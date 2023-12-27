@@ -1,31 +1,45 @@
 #define CBS_IMPLEMENTATION
 #include "cbs.h"
 
+#define CFLAGS "-Wall", "-Wextra", "-Wpedantic", "-std=c17"
+
 int main(int argc, char **argv) {
-	cbs_rebuild_self(argc, argv);
+	cbs_rebuild_self(argv);
 	cbs_shift_args(&argc, &argv);
 
-	Cbs_Pids pids = {0};
+	Cbs_Proc_Infos procs = {0};
 
 	char *current_arg;
 	while ((current_arg = cbs_shift_args(&argc, &argv))) {
 		if (cbs_str_eq(current_arg, "build")) {
 			cbs_run("mkdir", "-p", "build");
 			if (cbs_needs_rebuild("./build/hello", "hello.c")) {
-				cbs_pids_append(&pids, cbs_run_async("cc", "-o", "./build/hello", "hello.c"));
+				cbs_proc_infos_append(&procs, cbs_async_run("cc", CFLAGS, "-o", "./build/hello", "hello.c"));
 			}
+			cbs_proc_infos_append_many(&procs, \
+				cbs_async_run("mkdir", "-p", "test1"), \
+				cbs_async_run("mkdir", "-p", "test2"), \
+				cbs_async_run("mkdir", "-p", "test3"), \
+				cbs_async_run("mkdir", "-p", "test4") \
+			);
+			cbs_async_wait(&procs);
 		} else if(cbs_str_eq(current_arg, "run")) {
-			if (cbs_file_exists("./build/hello"))
-				cbs_run("./build/hello");
-			else
-				CBS_LOG("File not found, nothing to run");
+			if (!cbs_try_run("./build/hello")) {
+				cbs_run("./cbs", "build", "run");
+			}
 		} else if(cbs_str_eq(current_arg, "clean")) {
 			cbs_run("rm", "-rf", "build");
+			cbs_proc_infos_append_many(&procs, \
+				cbs_async_run("rmdir", "test1"), \
+				cbs_async_run("rmdir", "test2"), \
+				cbs_async_run("rmdir", "test3"), \
+				cbs_async_run("rmdir", "test4") \
+			);
+			cbs_async_wait(&procs);
 		} else {
-			CBS_ERROR("Not a valid argument");
+			cbs_error("Not a valid argument");
 		}
 	}
-	cbs_pids_wait(&pids);
 
 	return 0;
 }
