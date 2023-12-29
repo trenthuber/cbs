@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
 			if (cbs_needs_rebuild("./build/hello", "hello.c")) {
 				cbs_proc_infos_append(&procs, cbs_async_run("cc", CFLAGS, "-o", "./build/hello", "hello.c"));
 			}
-			cbs_proc_infos_append_many(&procs, \
+			cbs_proc_infos_build(&procs, \
 				cbs_async_run("mkdir", "-p", "test1"), \
 				cbs_async_run("mkdir", "-p", "test2"), \
 				cbs_async_run("mkdir", "-p", "test3"), \
@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
 			}
 		} else if(cbs_str_eq(current_arg, "clean")) {
 			cbs_run("rm", "-rf", "build");
-			cbs_proc_infos_append_many(&procs, \
+			cbs_proc_infos_build(&procs, \
 				cbs_async_run("rmdir", "test1"), \
 				cbs_async_run("rmdir", "test2"), \
 				cbs_async_run("rmdir", "test3"), \
