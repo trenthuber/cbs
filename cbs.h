@@ -238,17 +238,22 @@ bool cbs_cmd_try_run(Cbs_Cmd *cmd) {
 	return !status;
 }
 
+#define cbs_va_da_macro(da, Type, first) \
+	do { \
+		cbs_append_item(&da, first); \
+		va_list args; \
+		va_start(args, first); \
+		char *arg = va_arg(args, Type); \
+		while (arg) { \
+			cbs_append_item(&da, arg); \
+			arg = va_arg(args, Type); \
+		} \
+		va_end(args); \
+	} while(0)
+
 static bool cbs_try_run_nt(char *string, ...) {
 	Cbs_Cmd cmd = {0};
-	cbs_cmd_append(&cmd, string);
-	va_list args;
-	va_start(args, string);
-	char *arg = va_arg(args, char *);
-	while (arg) {
-		cbs_cmd_append(&cmd, arg);
-		arg = va_arg(args, char *);
-	}
-	va_end(args);
+	cbs_va_da_macro(cmd, char *, string);
 	return cbs_cmd_try_run(&cmd);
 }
 
@@ -298,15 +303,7 @@ Cbs_Proc_Info cbs_cmd_async_run(Cbs_Cmd *cmd) {
 
 static Cbs_Proc_Info cbs_async_run_nt(char *string, ...) {
 	Cbs_Cmd cmd = {0};
-	cbs_cmd_append(&cmd, string);
-	va_list args;
-	va_start(args, string);
-	char *arg = va_arg(args, char *);
-	while (arg) {
-		cbs_cmd_append(&cmd, arg);
-		arg = va_arg(args, char *);
-	}
-	va_end(args);
+	cbs_va_da_macro(cmd, char *, string);
 	return cbs_cmd_async_run(&cmd);
 }
 
