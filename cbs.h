@@ -38,6 +38,10 @@ char *cbs_shift_args(int *argc_p, char ***argv_p);
 bool cbs_file_exists(char *file);
 #define cbs_files_exist(file, ...) cbs_files_exist_nt(file, __VA_ARGS__, NULL)
 #define cbs_needs_rebuild(target, ...) cbs_needs_rebuild_nt(target, __VA_ARGS__, NULL)
+
+// TODO: Polish dynamic arrays in the whole thingy
+// TODO: cbs_merge that merges dynamic arrays?
+
 void cbs_cmd_append(Cbs_Cmd *cmd, char *string);
 #define cbs_cmd_build(cmd, ...) cbs_cmd_build_nt(cmd, __VA_ARGS__, NULL)
 void cbs_cmd_print(Cbs_Cmd cmd);
@@ -56,10 +60,19 @@ void cbs_proc_infos_append(Cbs_Proc_Infos *procs, Cbs_Proc_Info proc);
 #define cbs_proc_infos_append_many(procs, ...) cbs_proc_infos_append_many_zt(procs, __VA_ARGS__, (Cbs_Proc_Info) {0})
 void cbs_async_wait(Cbs_Proc_Infos *procs);
 
+typedef struct {
+	char **items;
+	int count;
+	int capacity;
+} Cbs_File_Names;
+
+Cbs_File_Names cbs_file_names_with_ext(char *dir_name, char *ext);
+
 #endif // _CBS_H_
 
 #ifdef CBS_IMPLEMENTATION
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -183,13 +196,13 @@ void cbs_cmd_run(Cbs_Cmd *cmd) {
 
 static void cbs_file_print_to_stdout(FILE *file) {
 	fseek(file, 0, SEEK_END);
-	long filesize = ftell(file);
-	if (filesize) {
-		char *buffer = malloc(filesize * sizeof(char));
+	long file_size = ftell(file);
+	if (file_size) {
+		char *buffer = malloc(file_size * sizeof(char));
 		if (buffer == NULL) cbs_error("Process ran out of memory");
 		fseek(file, 0, SEEK_SET);
-		fread(buffer, filesize, 1, file);
-		fwrite(buffer, filesize, 1, stdout);
+		fread(buffer, file_size, 1, file);
+		fwrite(buffer, file_size, 1, stdout);
 		free(buffer);
 	}
 }
@@ -199,8 +212,8 @@ bool cbs_cmd_try_run(Cbs_Cmd *cmd) {
 	int status = 0;
 	waitpid(proc.pid, &status, 0);
 	cbs_cmd_print(proc.cmd);
+	cbs_file_print_to_stdout(proc.output);
 	if (status) cbs_log("Previous command ran unsuccessfully, continuing build");
-	else cbs_file_print_to_stdout(proc.output);
 	return !status;
 }
 
@@ -251,7 +264,7 @@ void cbs_proc_infos_append_many_zt(Cbs_Proc_Infos *procs, ...) {
 void cbs_async_wait(Cbs_Proc_Infos *procs) {
 	if (procs == NULL || procs->count == 0) return;
 	int status = 0;
-	long filesize = 0;
+	long file_size = 0;
 	char *buffer;
 	for (int i = 0; i < procs->count; ++i) {
 		Cbs_Proc_Info proc = procs->items[i];
@@ -265,28 +278,78 @@ void cbs_async_wait(Cbs_Proc_Infos *procs) {
 }
 
 void cbs_rebuild_self(char **argv) {
-	char *filename = argv[0], *backup_ext = ".bak";
-	char *backup_filename = calloc(strlen(filename) + strlen(backup_ext), sizeof(char));
-	strcpy(backup_filename, filename);
-	strcat(backup_filename, backup_ext);
+	char *file_name = argv[0], *backup_ext = ".bak";
+	char *backup_file_name = calloc(strlen(file_name) + strlen(backup_ext), sizeof(char));
+	strcpy(backup_file_name, file_name);
+	strcat(backup_file_name, backup_ext);
 
-	if (!cbs_needs_rebuild(filename, "cbs.c", "cbs.h")) {
+	if (!cbs_needs_rebuild(file_name, "cbs.c", "cbs.h")) {
 		return;
 	}
 
 	cbs_log("Rebuilding cbs");
-	cbs_run("cp", filename, backup_filename);
-	if (!cbs_try_run("cc", "-o", filename, "cbs.c")) {
+	cbs_run("cp", file_name, backup_file_name);
+	if (!cbs_try_run("cc", "-o", file_name, "cbs.c")) {
 		cbs_log("Rebuild unsuccessful, undoing backup");
-		cbs_run("cp", backup_filename, filename);
-		cbs_run("rm", "-f", backup_filename);
+		cbs_run("cp", backup_file_name, file_name);
+		cbs_run("rm", "-f", backup_file_name);
 		cbs_error("Unable to rebuild cbs (bootstrapping may be necessary)");
 	}
-	cbs_run("rm", "-f", backup_filename);
+	cbs_run("rm", "-f", backup_file_name);
 	cbs_log("Rebuild successful");
-	if (execvp(filename, argv) == -1) {
+	if (execvp(file_name, argv) == -1) {
 		cbs_error("Syntax error while running previous command, could not rebuild cbs");
 	}
+}
+
+static bool cbs_file_has_ext(char *file_name, char *ext) {
+	if (file_name == NULL || ext == NULL) return false;
+	char *file_name_p = file_name, *ext_p = ext;
+	while (*file_name_p != '.' && *file_name_p != '\0') ++file_name_p;
+	if (*file_name_p++ == '\0') return false;
+	while (*file_name_p != '\0' && *ext_p != '\0') {
+		if (*file_name_p++ != *ext_p++) return false;
+	}
+	if (*file_name_p != '\0' || *ext_p != '\0') return false;
+	return true;
+}
+
+static char *cbs_file_strip_ext(char *file_name) {
+	char *char_p = file_name;
+	while (*char_p++ != '.');
+	int file_name_len = char_p - file_name - 1;
+	char *result = malloc((file_name_len + 1) * sizeof(char));
+	strncpy(result, file_name, file_name_len);
+	return result;
+}
+
+void cbs_file_names_append(Cbs_File_Names *file_names, char *file_name) {
+	if (file_names->capacity == 0) {
+		if ((file_names->items = malloc(sizeof(*file_names->items))) == NULL)
+			cbs_error("Process ran out of memory");
+		file_names->capacity = 1;
+	}
+	if (file_names->count >= file_names->capacity) {
+		if ((file_names->items = realloc(file_names->items, 2 * file_names->capacity * sizeof(*file_names->items))) == NULL)
+			cbs_error("Process ran out of memory");
+		file_names->capacity *= 2;
+	}
+	file_names->items[file_names->count++] = file_name;
+}
+
+Cbs_File_Names cbs_file_names_with_ext(char *dir_name, char *ext) {
+	Cbs_File_Names result = {0};
+	DIR *dir = opendir(dir_name);
+	struct dirent *entry = readdir(dir);
+	do {
+		char *file_name = entry->d_name;
+		if (entry->d_type == DT_REG && cbs_file_has_ext(file_name, ext)) {
+			cbs_file_names_append(&result, cbs_file_strip_ext(file_name));
+		}
+		entry = readdir(dir);
+	} while(entry);
+	closedir(dir);
+	return result;
 }
 
 #endif // CBS_IMPLEMENTATION

@@ -13,6 +13,14 @@ int main(int argc, char **argv) {
 	while ((current_arg = cbs_shift_args(&argc, &argv))) {
 		if (cbs_str_eq(current_arg, "build")) {
 			cbs_run("mkdir", "-p", "build");
+			Cbs_File_Names file_names = cbs_file_names_with_ext("./", "c");
+			for (int i = 0; i < file_names.count; ++i) {
+				printf("\t%s" ".c" "\n", file_names.items[i]);
+			}	
+			file_names = cbs_file_names_with_ext("./test", "c");
+			for (int i = 0; i < file_names.count; ++i) {
+				printf("\t%s" ".c" "\n", file_names.items[i]);
+			}	
 			if (cbs_needs_rebuild("./build/hello", "hello.c")) {
 				cbs_proc_infos_append(&procs, cbs_async_run("cc", CFLAGS, "-o", "./build/hello", "hello.c"));
 			}
