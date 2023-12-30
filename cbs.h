@@ -215,15 +215,15 @@ void cbs_cmd_run(Cbs_Cmd *cmd) {
 	cbs_async_wait(&procs);
 }
 
-static void cbs_file_print_to_stdout(FILE *file) {
-	fseek(file, 0, SEEK_END);
-	long file_size = ftell(file);
-	if (file_size) {
-		char *buffer = malloc(file_size * sizeof(char));
+static void cbs_file_copy(FILE *dst, FILE *src) {
+	fseek(src, 0, SEEK_END);
+	long src_size = ftell(src);
+	if (src_size) {
+		char *buffer = malloc(src_size * sizeof(char));
 		if (buffer == NULL) cbs_error("Process ran out of memory");
-		fseek(file, 0, SEEK_SET);
-		fread(buffer, file_size, 1, file);
-		fwrite(buffer, file_size, 1, stdout);
+		fseek(src, 0, SEEK_SET);
+		fread(buffer, src_size, 1, src);
+		fwrite(buffer, src_size, 1, dst);
 		free(buffer);
 	}
 }
@@ -233,7 +233,7 @@ bool cbs_cmd_try_run(Cbs_Cmd *cmd) {
 	int status = 0;
 	waitpid(proc.pid, &status, 0);
 	cbs_cmd_print(proc.cmd);
-	cbs_file_print_to_stdout(proc.output);
+	cbs_file_copy(stdout, proc.output);
 	if (status) cbs_log("Previous command ran unsuccessfully, continuing build");
 	return !status;
 }
@@ -258,28 +258,20 @@ static bool cbs_try_run_nt(char *string, ...) {
 }
 
 void cbs_rebuild_self(char **argv) {
-	char *file_name = argv[0], *backup_ext = ".bak";
-	char *backup_file_name = calloc(strlen(file_name) + strlen(backup_ext), sizeof(char));
-	strcpy(backup_file_name, file_name);
-	strcat(backup_file_name, backup_ext);
+	char *this_file_name = argv[0];
 
-	if (!cbs_needs_rebuild(file_name, "cbs.c", "cbs.h")) {
-		return;
-	}
+	if (!cbs_needs_rebuild(this_file_name, "cbs.c", "cbs.h")) return;
 
+	FILE *this_file = fopen(this_file_name, "r+"), *backup_file = tmpfile();
+	cbs_file_copy(backup_file, this_file);
 	cbs_log("Rebuilding cbs");
-	cbs_run("cp", file_name, backup_file_name);
-	if (!cbs_try_run("cc", "-o", file_name, "cbs.c")) {
+	if (!cbs_try_run("cc", "-o", this_file_name, "cbs.c")) {
 		cbs_log("Rebuild unsuccessful, undoing backup");
-		cbs_run("cp", backup_file_name, file_name);
-		cbs_run("rm", "-f", backup_file_name);
+		cbs_file_copy(this_file, backup_file);
 		cbs_error("Unable to rebuild cbs (bootstrapping may be necessary)");
 	}
-	cbs_run("rm", "-f", backup_file_name);
 	cbs_log("Rebuild successful");
-	if (execvp(file_name, argv) == -1) {
-		cbs_error("Syntax error while running previous command, could not rebuild cbs");
-	}
+	if (execvp(this_file_name, argv) == -1) cbs_error("Syntax error while running previous command, could not rebuild cbs");
 }
 
 Cbs_Proc_Info cbs_cmd_async_run(Cbs_Cmd *cmd) {
@@ -316,7 +308,7 @@ void cbs_async_wait(Cbs_Proc_Infos *procs) {
 		Cbs_Proc_Info proc = procs->items[i];
 		waitpid(proc.pid, &status, 0);
 		cbs_cmd_print(proc.cmd);
-		cbs_file_print_to_stdout(proc.output);
+		cbs_file_copy(stdout, proc.output);
 		if (status) cbs_error("Previous command ran unsuccessfully, stopping build");
 	}
 	free(procs->items);
