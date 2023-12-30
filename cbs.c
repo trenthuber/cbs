@@ -13,14 +13,17 @@ int main(int argc, char **argv) {
 	while ((current_arg = cbs_shift_args(&argc, &argv))) {
 		if (cbs_str_eq(current_arg, "build")) {
 			cbs_run("mkdir", "-p", "build");
-			Cbs_File_Names file_names = cbs_file_names_with_ext("./", "c");
+			Cbs_File_Names file_names = {0};
+			cbs_file_names_build_with_ext(&file_names, "./", "c"); // TODO: Have extensions include periods
 			for (int i = 0; i < file_names.count; ++i) {
 				printf("\t%s" ".c" "\n", file_names.items[i]);
 			}	
-			file_names = cbs_file_names_with_ext("./test", "c");
+			cbs_file_names_clear(&file_names);
+			cbs_file_names_build_with_ext(&file_names, "./test", "c");
 			for (int i = 0; i < file_names.count; ++i) {
 				printf("\t%s" ".c" "\n", file_names.items[i]);
 			}	
+			cbs_file_names_clear(&file_names);
 			if (cbs_needs_rebuild("./build/hello", "hello.c")) {
 				cbs_proc_infos_append(&procs, cbs_async_run("cc", CFLAGS, "-o", "./build/hello", "hello.c"));
 			}
