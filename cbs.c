@@ -7,7 +7,7 @@ int main(int argc, char **argv) {
 	cbs_rebuild_self(argv);
 	cbs_shift_args(&argc, &argv);
 
-	Cbs_Proc_Infos procs = {0};
+	Cbs_Async_Procs procs = {0};
 
 	char *current_arg;
 	while ((current_arg = cbs_shift_args(&argc, &argv))) {
@@ -26,15 +26,14 @@ int main(int argc, char **argv) {
 			cbs_file_paths_clear(&file_paths);
 			cbs_file_paths_append(&file_paths, "hello.c");
 			if (cbs_needs_rebuild_file_paths("./build/hello", file_paths)) {
-				cbs_proc_infos_append(&procs, cbs_async_run("cc", CFLAGS, "-o", "./build/hello", "hello.c"));
+				cbs_async_run(&procs, "cc", CFLAGS, "-o", "./build/hello", "hello.c");
+				// cbs_proc_infos_append(&procs, cbs_async_run("cc", CFLAGS, "-o", "./build/hello", "hello.c"));
 			}
 			cbs_file_paths_clear(&file_paths);
-			cbs_proc_infos_build(&procs, \
-				cbs_async_run("mkdir", "-p", "test1"), \
-				cbs_async_run("mkdir", "-p", "test2"), \
-				cbs_async_run("mkdir", "-p", "test3"), \
-				cbs_async_run("mkdir", "-p", "test4") \
-			);
+			cbs_async_run(&procs, "mkdir", "-p", "test1");
+			cbs_async_run(&procs, "mkdir", "-p", "test2");
+			cbs_async_run(&procs, "mkdir", "-p", "test3");
+			cbs_async_run(&procs, "mkdir", "-p", "test4");
 			cbs_async_wait(&procs);
 		} else if(cbs_str_eq(current_arg, "run")) {
 			if (!cbs_try_run("./build/hello")) {
@@ -42,12 +41,10 @@ int main(int argc, char **argv) {
 			}
 		} else if(cbs_str_eq(current_arg, "clean")) {
 			cbs_run("rm", "-rf", "build");
-			cbs_proc_infos_build(&procs, \
-				cbs_async_run("rmdir", "test1"), \
-				cbs_async_run("rmdir", "test2"), \
-				cbs_async_run("rmdir", "test3"), \
-				cbs_async_run("rmdir", "test4") \
-			);
+			cbs_async_run(&procs, "rmdir", "test1");
+			cbs_async_run(&procs, "rmdir", "test2");
+			cbs_async_run(&procs, "rmdir", "test3");
+			cbs_async_run(&procs, "rmdir", "test4");
 			cbs_async_wait(&procs);
 		} else {
 			cbs_error("Not a valid argument");
