@@ -49,8 +49,8 @@
 void cbs_rebuild_self(char *const *argv);
 
 char *cbs_shift_args(int *argc_p, char ***argv_p);
-#define cbs_str_eq(str1, str2) strcmp(str1, str2) == 0
-#define cbs_str_cat(string, ...) cbs__str_cat_nt(string, __VA_ARGS__, NULL)
+#define cbs_string_eq(str1, str2) strcmp(str1, str2) == 0
+#define cbs_string_build(string, ...) cbs__string_build_nt(string, __VA_ARGS__, NULL)
 bool cbs_file_exists(const char *file_path);
 #define cbs_files_exist(file_path, ...) cbs__files_exist_nt(file_path, __VA_ARGS__, NULL)
 char *cbs_get_file_name(const char *file_path);
@@ -61,6 +61,7 @@ cbs__da_struct(const char *, Cbs_File_Paths);
 #define cbs_file_paths_build(file_paths, ...) cbs__append_items(const char *, file_paths, __VA_ARGS__)
 void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths, const char *dir_path, const char *ext);
 #define cbs_file_paths_clear(file_paths) cbs__clear(file_paths)
+#define cbs_file_paths_free(...) cbs__file_paths_free_nt(__VA_ARGS__, NULL)
 
 #define cbs_needs_rebuild(target, ...) cbs__needs_rebuild_nt(target, __VA_ARGS__, NULL)
 bool cbs_needs_rebuild_file_paths(const char *target, Cbs_File_Paths deps);
@@ -91,8 +92,8 @@ typedef struct {
 	Cbs_Cmd cmd;
 	FILE *output;
 	pid_t pid;
-} Cbs_Async_Proc;
-cbs__da_struct(Cbs_Async_Proc, Cbs_Async_Procs);
+} Cbs__Async_Proc;
+cbs__da_struct(Cbs__Async_Proc, Cbs_Async_Procs);
 void cbs_cmd_async_run(Cbs_Async_Procs *procs, Cbs_Cmd *cmd);
 #define cbs_async_run(procs, ...) \
 	do { \
@@ -120,7 +121,7 @@ char *cbs_shift_args(int *argc_p, char ***argv_p) {
 	return *((*argv_p)++);
 }
 
-static char *cbs__str_cat_nt(const char *string, ...) {
+static char *cbs__string_build_nt(const char *string, ...) {
 	size_t sum_len = strlen(string);
 
 	va_list args;
@@ -129,7 +130,8 @@ static char *cbs__str_cat_nt(const char *string, ...) {
 	while ((arg = va_arg(args, const char *))) sum_len += strlen(arg);
 	va_end(args);
 
-	char *result = malloc((sum_len + 1) * sizeof(char));
+	char *result;
+	if ((result = malloc((sum_len + 1) * sizeof(char))) == NULL) cbs_malloc_error;
 	char *result_p = result;
 	result_p = stpncpy(result_p, string, strlen(string));
 
@@ -208,6 +210,20 @@ void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths, const char *dir_p
 		entry = readdir(dir);
 	}
 	if (closedir(dir) == -1) cbs_error("Unable to close directory after search");
+}
+
+static void cbs__file_paths_free_nt(Cbs_File_Paths *file_paths, ...) {
+	for (size_t i = 0; i < file_paths->count; ++i) free((char *) file_paths->items[i]);
+	cbs_file_paths_clear(file_paths);
+
+	va_list args;
+	va_start(args, file_paths);
+	Cbs_File_Paths *arg;
+	while ((arg = va_arg(args, Cbs_File_Paths *))) {
+		for (size_t i = 0; i < arg->count; ++i) free((char *) arg->items[i]);
+		cbs_file_paths_clear(arg);
+	}
+	va_end(args);
 }
 
 static bool cbs__needs_rebuild_nt(const char *target, ...) {
@@ -351,7 +367,7 @@ void cbs_rebuild_self(char *const *argv) {
 }
 
 void cbs_cmd_async_run(Cbs_Async_Procs *procs, Cbs_Cmd *cmd) {
-	Cbs_Async_Proc proc = {0};
+	Cbs__Async_Proc proc = {0};
 	proc.cmd = *cmd;
 	if ((proc.cmd.items = malloc(cmd->capacity * sizeof(char *))) == NULL) cbs__malloc_error;
 	memcpy(proc.cmd.items, cmd->items, cmd->count * sizeof(char *));
@@ -373,7 +389,7 @@ void cbs_async_wait(Cbs_Async_Procs *procs) {
 	if (procs == NULL || procs->count == 0) return;
 	int status = 0;
 	for (size_t i = 0; i < procs->count; ++i) {
-		Cbs_Async_Proc proc = procs->items[i];
+		Cbs__Async_Proc proc = procs->items[i];
 		waitpid(proc.pid, &status, 0);
 		cbs_cmd_print(proc.cmd);
 		cbs__file_copy(stdout, proc.output);
