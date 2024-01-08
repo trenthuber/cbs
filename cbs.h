@@ -5,10 +5,18 @@
 #include <stdio.h>
 #include <unistd.h>
 
+// cbs logging
 #define cbs_log(x) printf("%s\n", x)
 #define cbs_error(x) exit((fprintf(stderr, "ERROR: %s (%s:%u)\n", x, __FILE__, __LINE__), (errno ? (perror("INFO"), errno) : 1)));
-
 #define cbs__malloc_error cbs_error("Process ran out of memory")
+
+// cbs uses dynamic arrys for many different data structures; these are useful macros
+#define cbs__da_struct(Type, Name) \
+	typedef struct { \
+		Type *items; \
+		size_t count; \
+		size_t capacity; \
+	} Name
 #define cbs__append_item(da, item) \
 	do { \
 		if ((da)->capacity == 0) { \
@@ -39,33 +47,37 @@
 		(da)->items = NULL; \
 		(da)->count = (da)->capacity = 0; \
 	} while(0)
-#define cbs__da_struct(Type, Name) \
-	typedef struct { \
-		Type *items; \
-		size_t count; \
-		size_t capacity; \
-	} Name
 
 void cbs_rebuild_self(char *const *argv);
 
+// General utility functions that help with parsing command line options and manipulating file paths
 char *cbs_shift_args(int *argc_p, char ***argv_p);
 #define cbs_string_eq(str1, str2) strcmp(str1, str2) == 0
 #define cbs_string_build(string, ...) cbs__string_build_nt(string, __VA_ARGS__, NULL)
-bool cbs_file_exists(const char *file_path);
-#define cbs_files_exist(file_path, ...) cbs__files_exist_nt(file_path, __VA_ARGS__, NULL)
 char *cbs_get_file_name(const char *file_path);
 char *cbs_strip_file_ext(const char *file_path);
 
+// File paths
 cbs__da_struct(const char *, Cbs_File_Paths);
 #define cbs_file_paths_append(file_paths, file_path) cbs__append_item(file_paths, file_path)
 #define cbs_file_paths_build(file_paths, ...) cbs__append_items(const char *, file_paths, __VA_ARGS__)
 void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths, const char *dir_path, const char *ext);
+#define cbs_file_paths_for_each(file_path, file_paths) \
+	for (const char *file_path = file_paths.items[0], \
+					**current = &file_paths.items[0], \
+					**end = &file_paths.items[file_paths.count - 1]; \
+		 current <= end; \
+		 ++current, file_path = *current)
 #define cbs_file_paths_clear(file_paths) cbs__clear(file_paths)
 #define cbs_file_paths_free(...) cbs__file_paths_free_nt(__VA_ARGS__, NULL)
 
+// Useful conditionals, i.e., file caching
+bool cbs_file_exists(const char *file_path);
+#define cbs_files_exist(file_path, ...) cbs__files_exist_nt(file_path, __VA_ARGS__, NULL)
 #define cbs_needs_rebuild(target, ...) cbs__needs_rebuild_nt(target, __VA_ARGS__, NULL)
 bool cbs_needs_rebuild_file_paths(const char *target, Cbs_File_Paths deps);
 
+// Build and run commands
 cbs__da_struct(const char *, Cbs_Cmd);
 #define cbs_cmd_append(cmd, string) cbs__append_item(cmd, string)
 #define cbs_cmd_build(cmd, ...) cbs__append_items(const char *, cmd, __VA_ARGS__)
@@ -80,6 +92,7 @@ void cbs_cmd_build_file_paths(Cbs_Cmd *cmd, Cbs_File_Paths file_paths);
 bool cbs_cmd_try_run(Cbs_Cmd *cmd);
 void cbs_cmd_run(Cbs_Cmd *cmd);
 
+// Run commands directly
 #define cbs_try_run(...) cbs__try_run_nt(__VA_ARGS__, NULL)
 #define cbs_run(...) \
 	do { \
@@ -88,6 +101,7 @@ void cbs_cmd_run(Cbs_Cmd *cmd);
 		cbs_cmd_run(&cmd); \
 	} while(0)
 
+// Run commands asynchronously
 typedef struct {
 	Cbs_Cmd cmd;
 	FILE *output;
@@ -121,7 +135,7 @@ char *cbs_shift_args(int *argc_p, char ***argv_p) {
 	return *((*argv_p)++);
 }
 
-static char *cbs__string_build_nt(const char *string, ...) {
+char *cbs__string_build_nt(const char *string, ...) {
 	size_t sum_len = strlen(string);
 
 	va_list args;
@@ -131,7 +145,7 @@ static char *cbs__string_build_nt(const char *string, ...) {
 	va_end(args);
 
 	char *result;
-	if ((result = malloc((sum_len + 1) * sizeof(char))) == NULL) cbs_malloc_error;
+	if ((result = malloc((sum_len + 1) * sizeof(char))) == NULL) cbs__malloc_error;
 	char *result_p = result;
 	result_p = stpncpy(result_p, string, strlen(string));
 
@@ -141,29 +155,6 @@ static char *cbs__string_build_nt(const char *string, ...) {
 	*result_p = '\0';
 
 	return result;
-}
-
-bool cbs_file_exists(const char *file_path) {
-	struct stat temp;
-	if (stat(file_path, &temp) == -1) {
-		if (errno == ENOENT) return false;
-		cbs_error("Unable to access file");
-	}
-	return true;
-}
-
-static bool cbs__files_exist_nt(const char *file_path, ...) {
-	if (!cbs_file_exists(file_path)) return false;
-	va_list args;
-	va_start(args, file_path);
-	const char *arg;
-	while ((arg = va_arg(args, const char *)))
-		if (!cbs_file_exists(arg)) {
-			va_end(args);
-			return false;
-		}
-	va_end(args);
-	return true;
 }
 
 char *cbs_get_file_name(const char *file_path) {
@@ -212,7 +203,7 @@ void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths, const char *dir_p
 	if (closedir(dir) == -1) cbs_error("Unable to close directory after search");
 }
 
-static void cbs__file_paths_free_nt(Cbs_File_Paths *file_paths, ...) {
+void cbs__file_paths_free_nt(Cbs_File_Paths *file_paths, ...) {
 	for (size_t i = 0; i < file_paths->count; ++i) free((char *) file_paths->items[i]);
 	cbs_file_paths_clear(file_paths);
 
@@ -226,7 +217,30 @@ static void cbs__file_paths_free_nt(Cbs_File_Paths *file_paths, ...) {
 	va_end(args);
 }
 
-static bool cbs__needs_rebuild_nt(const char *target, ...) {
+bool cbs_file_exists(const char *file_path) {
+	struct stat temp;
+	if (stat(file_path, &temp) == -1) {
+		if (errno == ENOENT) return false;
+		cbs_error("Unable to access file");
+	}
+	return true;
+}
+
+bool cbs__files_exist_nt(const char *file_path, ...) {
+	if (!cbs_file_exists(file_path)) return false;
+	va_list args;
+	va_start(args, file_path);
+	const char *arg;
+	while ((arg = va_arg(args, const char *)))
+		if (!cbs_file_exists(arg)) {
+			va_end(args);
+			return false;
+		}
+	va_end(args);
+	return true;
+}
+
+bool cbs__needs_rebuild_nt(const char *target, ...) {
 	struct stat temp;
 	if (!cbs_file_exists(target)) return true;
 	stat(target, &temp);
@@ -265,7 +279,7 @@ bool cbs_needs_rebuild_file_paths(const char *target, Cbs_File_Paths deps) {
 }
 
 void cbs_cmd_build_file_paths(Cbs_Cmd *cmd, Cbs_File_Paths file_paths) {
-	for (size_t i = 0; i < file_paths.count; ++i) cbs_cmd_append(cmd, file_paths.items[i]);
+	cbs_file_paths_for_each(file_path, file_paths) cbs_cmd_append(cmd, file_path);
 }
 
 #define cbs__cmd_run_save_status(cmd) \
@@ -302,7 +316,7 @@ bool cbs_cmd_try_run(Cbs_Cmd *cmd) {
 		va_end(args); \
 	} while(0)
 
-static bool cbs__try_run_nt(const char *string, ...) {
+bool cbs__try_run_nt(const char *string, ...) {
 	Cbs_Cmd cmd = {0};
 	cbs__append_from_va(cmd, const char *, string);
 	return cbs_cmd_try_run(&cmd);
@@ -355,7 +369,7 @@ void cbs_rebuild_self(char *const *argv) {
 
 	cbs__file_copy(backup_file, this_file);
 	cbs_log("Rebuilding cbs");
-	if (!cbs_try_run("cc", "-o", this_file_name, "cbs.c")) {
+	if (!cbs_try_run("cc", "-Wall", "-Wextra", "-Wpedantic", "-std=c17", "-o", this_file_name, "cbs.c")) {
 		cbs_log("Rebuild unsuccessful, undoing backup");
 		cbs__file_copy(this_file, backup_file);
 		fclose(this_file);
