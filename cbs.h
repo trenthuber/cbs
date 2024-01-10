@@ -322,61 +322,13 @@ bool cbs__try_run_nt(const char *string, ...) {
 	return cbs_cmd_try_run(&cmd);
 }
 
-static void cbs__file_copy(FILE *dst, FILE *src) {
-	if (fseek(src, 0, SEEK_END) == -1) cbs_error("Unable to seek file during copy");
-	long src_size;
-	if ((src_size = ftell(src)) == -1) cbs_error("Unable to access file during copy");
-	if (src_size == 0) return;
-
-	char *buffer;
-	if ((buffer = malloc(src_size * sizeof(char))) == NULL) cbs__malloc_error;
-	if (fseek(src, 0, SEEK_SET) == -1) cbs_error("Unable to seek file during copy");
-	size_t file_index = src_size, n;
-	char *buffer_p = buffer;
-	while(file_index > 0) {
-		n = fread(buffer_p, 1, file_index, src);
-		if (ferror(src)) {
-			if (src != stderr) fclose(src); 
-			if (dst != stderr) fclose(dst);
-			cbs_error("Unable to read from source file while copying");
-		}
-		file_index -= n;
-		buffer_p += n;
-	}
-	file_index = src_size;
-	buffer_p = buffer;
-	while (file_index > 0) {
-		n = fwrite(buffer_p, 1, file_index, dst);
-		if (ferror(dst)) {
-			if (src != stderr) fclose(src); 
-			if (dst != stderr) fclose(dst);
-			cbs_error("Unable to write to destination file while copying");
-		}
-		file_index -= n;
-		buffer_p += n;
-	}
-	free(buffer);
-}
-
 void cbs_rebuild_self(char *const *argv) {
 	const char *this_file_name = argv[0];
-
 	if (!cbs_needs_rebuild(this_file_name, "cbs.c", "cbs.h")) return;
-
-	FILE *this_file, *backup_file;
-	if ((this_file = fopen(this_file_name, "r+")) == NULL) cbs_error("Unable to open file for rebuilding, bootstrapping may be necessary");
-	if ((backup_file = tmpfile()) == NULL) cbs_error("Unable to open backup file for rebuilding, bootstraping may be necessary");
-
-	cbs__file_copy(backup_file, this_file);
 	cbs_log("Rebuilding cbs");
-	if (!cbs_try_run("cc", "-Wall", "-Wextra", "-Wpedantic", "-std=c17", "-o", this_file_name, "cbs.c")) {
-		cbs_log("Rebuild unsuccessful, undoing backup");
-		cbs__file_copy(this_file, backup_file);
-		fclose(this_file);
-		cbs_error("Unable to rebuild cbs, bootstrapping may be necessary");
-	}
+	if (!cbs_try_run("cc", "-Wall", "-Wextra", "-Wpedantic", "-o", this_file_name, "cbs.c"))
+		cbs_error("Rebuild unsuccessful, bootstrapping may be necessary");
 	cbs_log("Rebuild successful");
-	fclose(this_file);
 	if (execvp(this_file_name, argv) == -1) cbs_error("Rebuilt build command ran unsuccessfully, bootstrapping may be necessary");
 }
 
@@ -399,6 +351,28 @@ void cbs_cmd_async_run(Cbs_Async_Procs *procs, Cbs_Cmd *cmd) {
 	cbs__append_item(procs, proc);
 }
 
+static void cbs__file_print(FILE *file) { 
+	if (fseek(file, 0, SEEK_END) == -1) cbs_error("Unable to seek file during print");
+	long file_size;
+	if ((file_size = ftell(file)) == -1) cbs_error("Unable to access file during print");
+	if (file_size == 0) return;
+	char *buffer;
+	if ((buffer = malloc((file_size + 1) * sizeof(char))) == NULL) cbs__malloc_error;
+	if (fseek(file, 0, SEEK_SET) == -1) cbs_error("Unable to seek file during print");
+
+	size_t file_index = file_size, n;
+	char *buffer_p = buffer;
+	while(file_index > 0) {
+		n = fread(buffer_p, 1, file_index, file);
+		if (ferror(file)) cbs_error("Unable to read from file while printing");
+		file_index -= n;
+		buffer_p += n;
+	}
+	*buffer_p = '\0';
+	printf("%s\n", buffer);
+	free(buffer);
+}
+
 void cbs_async_wait(Cbs_Async_Procs *procs) {
 	if (procs == NULL || procs->count == 0) return;
 	int status = 0;
@@ -406,7 +380,7 @@ void cbs_async_wait(Cbs_Async_Procs *procs) {
 		Cbs__Async_Proc proc = procs->items[i];
 		waitpid(proc.pid, &status, 0);
 		cbs_cmd_print(proc.cmd);
-		cbs__file_copy(stdout, proc.output);
+		cbs__file_print(proc.output);
 		if (status) cbs_error("Previous command ran unsuccessfully, stopping build");
 	}
 	cbs__clear(procs);
