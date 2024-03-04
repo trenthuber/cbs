@@ -1,4 +1,4 @@
-# cbs, C Build System
+# cbs, a C build system
 
 ## Motivation
 The idea for this project is directly stolen from a recreational programming streamer, [Tsoding Daily](https://www.youtube.com/watch?v=eRt7vhosgKE&list=PLpM-Dvs8t0Va1sCJpPFjs2lKzv8bw3Lpw), specifically from his [musializer](https://github.com/tsoding/musializer) project.

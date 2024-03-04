@@ -10,7 +10,7 @@
 #define cbs_error(x) \
 	do { \
 		fprintf(stderr, "ERROR: %s (%s:%u)\n", x, __FILE__, __LINE__); \
-		exit(errno ? (perror("INFO"), errno) : 1); \
+		exit(errno ? (perror("INFO"), errno) : EXIT_FAILURE); \
 	} while(0)
 #define cbs__malloc_error cbs_error("Process ran out of memory")
 
@@ -44,7 +44,7 @@
 		} else if ((da)->count + size - 1 >= (da)->cap) { \
 			while ((da)->count + size - 1 >= (da)->cap) (da)->cap *= 2; \
 			(da)->items = realloc((da)->items, (da)->cap * sizeof(*(da)->items)); \
-			if ((da->items == NULL) \
+			if ((da)->items == NULL) \
 				cbs__malloc_error; \
 		} \
 		memcpy(&(da)->items[(da)->count], list, size * sizeof(*(da)->items)); \
