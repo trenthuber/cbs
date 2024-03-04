@@ -30,8 +30,7 @@
 		} else if ((da)->count >= (da)->cap) { \
 			(da)->cap *= 2; \
 			(da)->items = realloc((da)->items, (da)->cap * sizeof(*(da)->items)); \
-			if ((da)->items == NULL) \
-				cbs__malloc_error; \
+			if ((da)->items == NULL) cbs__malloc_error; \
 		} \
 		(da)->items[(da)->count++] = item; \
 	} while(0)
@@ -44,8 +43,7 @@
 		} else if ((da)->count + size - 1 >= (da)->cap) { \
 			while ((da)->count + size - 1 >= (da)->cap) (da)->cap *= 2; \
 			(da)->items = realloc((da)->items, (da)->cap * sizeof(*(da)->items)); \
-			if ((da)->items == NULL) \
-				cbs__malloc_error; \
+			if ((da)->items == NULL) cbs__malloc_error; \
 		} \
 		memcpy(&(da)->items[(da)->count], list, size * sizeof(*(da)->items)); \
 		(da)->count += size; \
@@ -151,7 +149,8 @@ void cbs_async_wait(Cbs_Async_Procs *procs);
 #include <sys/wait.h>
 
 char *cbs_shift_args(int *argc_p, char ***argv_p) {
-	if ((*argc_p)-- == 0) return NULL;
+	if (*argc_p <= 0) return NULL;
+	(*argc_p)--;
 	return *((*argv_p)++);
 }
 
@@ -386,7 +385,7 @@ void cbs_cmd_async_run(Cbs_Async_Procs *procs, Cbs_Cmd *cmd) {
 	cbs__append_item(procs, proc);
 }
 
-static void cbs__file_print(FILE *file) { 
+static void cbs__file_print(FILE *file, FILE *output) { 
 	if (fseek(file, 0, SEEK_END) == -1)
 		cbs_error("Unable to seek file during print");
 	long file_size = ftell(file);
@@ -406,7 +405,7 @@ static void cbs__file_print(FILE *file) {
 		buffer_p += n;
 	}
 	*buffer_p = '\0';
-	printf("%s\n", buffer);
+	fprintf(output, "%s\n", buffer);
 	free(buffer);
 }
 
@@ -417,7 +416,7 @@ void cbs_async_wait(Cbs_Async_Procs *procs) {
 		Cbs__Async_Proc proc = procs->items[i];
 		waitpid(proc.pid, &status, 0);
 		cbs_cmd_print(proc.cmd);
-		cbs__file_print(proc.output);
+		cbs__file_print(proc.output, status ? stderr : stdout);
 		if (status) cbs_error("Previous command ran unsuccessfully, stopping build");
 	}
 	cbs__clear(procs);
