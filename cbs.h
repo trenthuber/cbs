@@ -307,7 +307,8 @@ bool cbs_needs_rebuild_file_paths(const char *target, Cbs_File_Paths deps) {
 }
 
 void cbs_cmd_build_file_paths(Cbs_Cmd *cmd, Cbs_File_Paths file_paths) {
-	cbs_file_paths_for_each(file_path, file_paths) cbs_cmd_append(cmd, file_path);
+	if (file_paths.count > 0)
+		cbs_file_paths_for_each(file_path, file_paths) cbs_cmd_append(cmd, file_path);
 }
 
 #define cbs__cmd_run_save_status(cmd) \
