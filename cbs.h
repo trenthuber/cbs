@@ -80,7 +80,7 @@
  *                                       const char *string, ...);
  * void   cbs_async_wait                (Cbs_Async_Procs *procs);
  *
- * [^] For functions whose parameter list ends in an ellipsis, this represents
+ * [^] For functions whose parameter list ends in an ellipsis, this indicates
  * that the function takes variatic arguments of the same type as the parameter
  * preceding the ellipsis.
  *
