@@ -25,12 +25,12 @@ int main(int argc, char **argv) {
 
 To run your build program initially, you must first bootstrap it. Simply run:
 ```console
-cc -o cbs cbs.c && ./cbs # Run this the first time
+$ cc -o cbs cbs.c && ./cbs # Run this the first time
 ```
 
 Every time after that, the `cbs_rebuild_self()` function (assuming you put it at the top of your program) will handle rebuilding the `cbs.c` program and rerunning for you. Thus, to build your project after the initial bootstrapping, you only need to run:
 ```console
-./cbs # Run this every time after
+$ ./cbs # Run this every time after
 ```
 
 See `cbs.h` for an overview on the interface.
