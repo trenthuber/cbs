@@ -459,7 +459,7 @@ void cbs_rebuild_self(char *const *argv) {
 	                                             "/cbs.c");
 	if (!cbs_needs_rebuild(this_file_path, src_file_path, CBS_LIBRARY_PATH))
 		return;
-	cbs_log("Rebuilding cbs");
+	cbs_log(cbs_string_build("Rebuilding ", this_file_path));
 	if (cbs_run_status("cc", "-Wall", "-Wextra", "-Wpedantic",
 	                   "-o", this_file_path, src_file_path))
 		cbs_error("Rebuild unsuccessful, bootstrapping may be necessary");
