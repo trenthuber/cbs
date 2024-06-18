@@ -533,7 +533,7 @@ void cbs_async_wait(Cbs_Async_Procs *procs) {
 
 void cbs__subbuild_nt(const char *dir, ...) {
 	const char *src_file_path = cbs_string_build(dir, "/cbs.c");
-	const char *executable_file_path = cbs_string_build(dir, "/cbs.c");
+	const char *executable_file_path = cbs_strip_file_ext(src_file_path);
 	if (!cbs_files_exist(executable_file_path))
 		cbs_run("cc", "-o", executable_file_path, src_file_path);
 
@@ -541,7 +541,7 @@ void cbs__subbuild_nt(const char *dir, ...) {
 	cbs_cd(dir);
 
 	Cbs_Cmd cmd = {0};
-	cbs_cmd_build(&cmd, "./cbs");
+	cbs_cmd_build(&cmd, cbs_get_file_name(executable_file_path));
 	va_list args;
 	va_start(args, dir);
 	const char *arg;
