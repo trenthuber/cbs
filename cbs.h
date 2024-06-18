@@ -39,7 +39,9 @@
  * bool   cbs_string_eq                 (const char *string1,
  *                                       const char *string2);
  * char * cbs_string_build              (const char *string, ...);
+ * char * cbs_get_file_dir              (const char *file_path);
  * char * cbs_get_file_name             (const char *file_path);
+ * char * cbs_get_file_ext              (const char *file_path);
  * char * cbs_strip_file_ext            (const char *file_path);
  * void   cbs_cd                        (const char *dir);
  *
@@ -170,7 +172,9 @@ char *cbs_shift_args(int *argc_p, char ***argv_p);
 #define cbs_string_eq(string1, string2) strcmp(string1, string2) == 0
 #define cbs_string_build(string, ...) \
 	cbs__string_build_nt(string, __VA_ARGS__, NULL)
+char *cbs_get_file_dir(const char *file_path);
 char *cbs_get_file_name(const char *file_path);
+char *cbs_get_file_ext(const char *file_path);
 char *cbs_strip_file_ext(const char *file_path);
 #define cbs_cd(dir) \
 	do { \
@@ -256,6 +260,7 @@ void cbs_async_wait(Cbs_Async_Procs *procs);
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 
@@ -288,33 +293,38 @@ char *cbs__string_build_nt(const char *string, ...) {
 	return result;
 }
 
+char *cbs_get_file_dir(const char *file_path) {
+	const char *index = rindex(file_path, '/');
+	char *result = index ? strndup(file_path, index - file_path) : "";
+	if (result == NULL) cbs__malloc_error;
+	return result;
+}
+
 char *cbs_get_file_name(const char *file_path) {
-	size_t file_len = strlen(file_path);
-	if (file_len == 0) return "";
-	while (file_path[--file_len] != '/') if (file_len == 0) break;
-	const char *file_name = file_len == 0 && *file_path != '/'
-	                      ? file_path
-	                      : &file_path[file_len + 1];
-	char *result = strdup(file_name);
+	const char *index = rindex(file_path, '/');
+	char *result = index ? strdup(file_path + (index - file_path + 1))
+	                     : strdup(file_path);
+	if (result == NULL) cbs__malloc_error;
+	return result;
+}
+
+char *cbs_get_file_ext(const char *file_path) {
+	const char *index = rindex(file_path, '.'),
+	           *slash_index = rindex(file_path, '/');
+	if (slash_index && index < slash_index) return "";
+	char *result = index ? strdup(file_path + (index - file_path))
+	                     : strdup(file_path);
 	if (result == NULL) cbs__malloc_error;
 	return result;
 }
 
 char *cbs_strip_file_ext(const char *file_path) {
-	size_t file_len = strlen(file_path);
-	if (file_len == 0) return "";
-	while (file_path[--file_len] != '.') if (file_len == 0) return "";
-	char *result = strndup(file_path, file_len);
+	size_t file_ext_len = strlen(cbs_get_file_ext(file_path));
+	char *result = file_ext_len > 0
+	             ? strndup(file_path, strlen(file_path) - file_ext_len)
+	             : strdup(file_path);
 	if (result == NULL) cbs__malloc_error;
 	return result;
-}
-
-bool cbs__file_has_ext(const char *file_path, const char *ext) {
-	size_t file_len = strlen(file_path), ext_len = strlen(ext);
-	if (file_len <= ext_len) return false;
-	for (--file_len, --ext_len; ext_len > 0; --file_len, --ext_len)
-		if (file_path[file_len] != ext[ext_len]) return false;
-	return file_path[file_len] == ext[ext_len];
 }
 
 void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths,
@@ -325,7 +335,8 @@ void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths,
 	struct dirent *entry = readdir(dir);
 	while (entry) {
 		const char *file_path = entry->d_name;
-		if (entry->d_type == DT_REG && cbs__file_has_ext(file_path, ext)) {
+		if (entry->d_type == DT_REG &&
+		    cbs_string_eq(cbs_get_file_ext(file_path), ext)) {
 			char *result_path = malloc((strlen(dir_path) + strlen(file_path) + 2) *
 			                           sizeof(char));
 			if (result_path == NULL) cbs__malloc_error;
@@ -434,14 +445,16 @@ int cbs__run_status_nt(const char *string, ...) {
 }
 
 void cbs_rebuild_self(char *const *argv) {
-	const char *this_file_name = argv[0];
-	if (!cbs_needs_rebuild(this_file_name, "cbs.c", "cbs.h")) return;
+	const char *this_file_path = argv[0];
+	const char *src_file_path = cbs_string_build(cbs_get_file_dir(this_file_path),
+	                                             "/cbs.c");
+	if (!cbs_needs_rebuild(this_file_path, src_file_path)) return;
 	cbs_log("Rebuilding cbs");
 	if (cbs_run_status("cc", "-Wall", "-Wextra", "-Wpedantic",
-	                   "-o", this_file_name, "cbs.c"))
+	                   "-o", this_file_path, src_file_path))
 		cbs_error("Rebuild unsuccessful, bootstrapping may be necessary");
 	cbs_log("Rebuild successful");
-	if (execvp(this_file_name, argv) == -1)
+	if (execvp(this_file_path, argv) == -1)
 		cbs_error("Rebuilt build command ran unsuccessfully, "
 		          "bootstrapping may be necessary");
 }
