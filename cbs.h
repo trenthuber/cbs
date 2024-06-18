@@ -1,4 +1,5 @@
 /* cbs, Trent Huber 2024
+ * https://github.com/trenthuber/cbs.git
  *
  *
  * SUMMARY
@@ -27,10 +28,10 @@
  * "functions" are really macros, but that doesn't matter much). They've been
  * organized in the order they would be "typically" used in a build program.
  *
- * RET    NAME                          PARAMETERS [^]
+ * RET    NAME                          PARAMETERS [^1]
  *
  * - Self rebuilding -
- * void   cbs_rebuild_self              (char *const *argv);
+ * void   cbs_rebuild_self [^2]         (char *const *argv);
  *
  * - General purpose -
  * void   cbs_log                       (const char *msg);
@@ -82,9 +83,16 @@
  *                                       const char *string, ...);
  * void   cbs_async_wait                (Cbs_Async_Procs *procs);
  *
- * [^] For functions whose parameter list ends in an ellipsis, this indicates
+ * [^1] For functions whose parameter list ends in an ellipsis, this indicates
  * that the function takes variatic arguments of the same type as the parameter
  * preceding the ellipsis.
+ *
+ * [^2] cbs_rebuild_self() assumes your source file is cbs.c in the same
+ * directory as the currently running file is in. Thus, this function is only
+ * accessable to call if you've defined CBS_IMPLEMENTATION. Further more, you
+ * can define CBS_LIBRARY_PATH with the path of the cbs.h file you're including
+ * so it automatically rebuilds when that file is edited (default value is
+ * "./cbs.h").
  *
  *
  * LICENSE
@@ -157,9 +165,6 @@
 	cbs__append_list(da, ((Type[]) {__VA_ARGS__}), \
 	                 (size_t) (sizeof((Type[]) {__VA_ARGS__}) / sizeof(Type)))
 #define cbs__clear(da) (da)->count = 0
-
-// Self rebuilding: running "./cbs" rebuilds "cbs.c" automatically
-void cbs_rebuild_self(char *const *argv);
 
 // Utility functions: logging, parsing the command line, modifying file paths
 #define cbs_log(x) printf("%s\n", x)
@@ -253,6 +258,10 @@ void cbs_async_wait(Cbs_Async_Procs *procs);
 #endif // _CBS_H_
 
 #ifdef CBS_IMPLEMENTATION
+
+#ifndef CBS_LIBRARY_PATH
+#define CBS_LIBRARY_PATH "./cbs.h"
+#endif // CBS_LIBRARY_PATH
 
 #include <dirent.h>
 #include <errno.h>
@@ -448,7 +457,8 @@ void cbs_rebuild_self(char *const *argv) {
 	const char *this_file_path = argv[0];
 	const char *src_file_path = cbs_string_build(cbs_get_file_dir(this_file_path),
 	                                             "/cbs.c");
-	if (!cbs_needs_rebuild(this_file_path, src_file_path)) return;
+	if (!cbs_needs_rebuild(this_file_path, src_file_path, CBS_LIBRARY_PATH))
+		return;
 	cbs_log("Rebuilding cbs");
 	if (cbs_run_status("cc", "-Wall", "-Wextra", "-Wpedantic",
 	                   "-o", this_file_path, src_file_path))
