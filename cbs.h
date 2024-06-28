@@ -34,13 +34,14 @@
  * void   cbs_rebuild_self [^1]         (char *const *argv);
  *
  * - General purpose -
- * void   cbs_log                       (const char *msg);
- * void   cbs_error                     (const char *msg);
+ * void   cbs_log                       (const char *fmt, ...);
+ * void   cbs_error                     (const char *fmt, ...);
  * char * cbs_shift_args                (int *argc_p, char ***argv_p);
  * bool   cbs_string_eq                 (const char *string1,
  *                                       const char *string2);
  * char * cbs_string_build              (const char *string1,
- *                                       const char *string2, ...); [^2]
+ *                                       const char *string2,
+ *                                       (const char *)...); [^2]
  * char * cbs_get_file_dir              (const char *file_path);
  * char * cbs_get_file_name             (const char *file_path);
  * char * cbs_get_file_ext              (const char *file_path);
@@ -49,21 +50,24 @@
  *
  * - File paths -
  * void   cbs_file_paths_build          (Cbs_File_Paths *file_paths,
- *                                       Cbs_File_Path file_path, ...);
+ *                                       Cbs_File_Path file_path,
+ *                                       (Cbs_File_Path)...);
  * void   cbs_file_paths_build_file_ext (Cbs_File_Paths *file_paths,
  *                                       const char *dir_path, const char *ext);
  * void   cbs_file_paths_for_each       (Cbs_File_Path file_path,
  *                                       Cbs_File_Paths *file_paths);
  *
  * - File caching -
- * bool   cbs_files_exist               (const char *file_path, ...);
+ * bool   cbs_files_exist               (const char *file_path,
+ *                                       (const char *)...);
  * bool   cbs_needs_rebuild             (const char *target, const char *dep,
- *                                       ...);
+ *                                       (const char *)...);
  * bool   cbs_needs_rebuild_file_paths  (const char *target,
  *                                       Cbs_File_Paths deps);
  *
  * - Build and run commands -
- * void   cbs_cmd_build                 (Cbs_Cmd *cmd, const char *string, ...);
+ * void   cbs_cmd_build                 (Cbs_Cmd *cmd, const char *string,
+ *                                       (const char *)...);
  * void   cbs_cmd_build_file_paths      (Cbs_Cmd *cmd,
  *                                       Cbs_File_Paths file_paths);
  * void   cbs_cmd_print                 (Cbs_Cmd *cmd);
@@ -71,18 +75,17 @@
  * void   cbs_cmd_run                   (Cbs_Cmd *cmd);
  *
  * - Run commands directly -
- * int    cbs_run_status                (const char *string, ...);
- * void   cbs_run                       (const char *string, ...);
+ * int    cbs_run_status                (const char *string, (const char *)...);
+ * void   cbs_run                       (const char *string, (const char *)...);
  *
  * - Run commands asynchronously -
  * void   cbs_cmd_async_run             (Cbs_Async_Procs *procs, Cbs_Cmd *cmd);
  * void   cbs_async_run                 (Cbs_Async_Procs *procs,
- *                                       const char *string, ...);
+ *                                       const char *string, (const char *)...);
  * void   cbs_async_wait                (Cbs_Async_Procs *procs);
  *
  * - Subbuild -
- * void   cbs_subbuild                  (const char *dir,
- *                                       [const char *subcommand], ...); [^3]
+ * void   cbs_subbuild [^3]             (const char *dir, (const char *)...);
  *
  * [^1] cbs_rebuild_self() assumes your source file is cbs.c in the same
  * directory as the currently running file is in. Thus, this function is only
@@ -91,11 +94,12 @@
  * so it automatically rebuilds when that file is edited (default value is
  * "./cbs.h").
  *
- * [^2] For functions whose parameter list ends in an ellipsis, this indicates
- * that the function can optionally take variatic arguments of the same type as
- * the parameter preceding the ellipsis.
+ * [^2] Variadics with a type before them indicate that all arguments passed
+ * after that point must be of that type.
  *
- * [^3] Parameters wrapped in square braces are optional.
+ * [^3] cbs_subbuild() assumes your source file is cbs.c in the directory
+ * specified and will create the binary file, labeled cbs, in that directory.
+ * Variadics passed to it are interpreted as subcommands for that build file.
  *
  *
  * LICENSE
@@ -165,15 +169,20 @@
 		(da)->count += size; \
 	} while(0)
 #define cbs__append_items(Type, da, ...) \
-	cbs__append_list(da, ((Type[]) {__VA_ARGS__}), \
-	                 (size_t) (sizeof((Type[]) {__VA_ARGS__}) / sizeof(Type)))
+	cbs__append_list(da, ((Type[]){__VA_ARGS__}), \
+	                 (size_t)(sizeof((Type[]){__VA_ARGS__}) / sizeof(Type)))
 #define cbs__clear(da) (da)->count = 0
 
 // Utility functions: logging, parsing the command line, modifying file paths
-#define cbs_log(x) printf("%s\n", x)
-#define cbs_error(x) \
+#define cbs_log(...) \
 	do { \
-		fprintf(stderr, "ERROR: %s (%s:%u)\n", x, __FILE__, __LINE__); \
+		printf("LOG: " __VA_ARGS__) \
+		printf("\n"); \
+	while(0)
+#define cbs_error(...) \
+	do { \
+		fprintf(stderr, "ERROR: " __VA_ARGS__); \
+		fprintf(stderr, " (%s:%u)\n", __FILE__, __LINE__); \
 		exit(errno ? (perror("INFO"), errno) : EXIT_FAILURE); \
 	} while(0)
 char *cbs_shift_args(int *argc_p, char ***argv_p);
@@ -201,8 +210,8 @@ void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths,
                                    const char *ext);
 #define cbs_file_paths_for_each(file_path, file_paths) \
 	for (const char *file_path = file_paths.items[0], \
-	     **current = &file_paths.items[0], \
-	     **end = &file_paths.items[file_paths.count - 1]; \
+	                **current = &file_paths.items[0], \
+	                **end = &file_paths.items[file_paths.count - 1]; \
 	     current <= end; \
 	     ++current, file_path = *current)
 
@@ -255,8 +264,7 @@ void cbs_cmd_async_run(Cbs_Async_Procs *procs, Cbs_Cmd *cmd);
 void cbs_async_wait(Cbs_Async_Procs *procs);
 
 // Run a subbuild
-#define cbs_subbuild(...) \
-	cbs__subbuild_nt(__VA_ARGS__, NULL)
+#define cbs_subbuild(...) cbs__subbuild_nt(__VA_ARGS__, NULL)
 
 #endif // _CBS_H_
 
@@ -347,8 +355,8 @@ void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths,
 	struct dirent *entry = readdir(dir);
 	while (entry) {
 		const char *file_path = entry->d_name;
-		if (entry->d_type == DT_REG &&
-		    cbs_string_eq(cbs_get_file_ext(file_path), ext)) {
+		if (entry->d_type == DT_REG
+		    && cbs_string_eq(cbs_get_file_ext(file_path), ext)) {
 			char *result_path = malloc((strlen(dir_path) + strlen(file_path) + 2) *
 			                           sizeof(char));
 			if (result_path == NULL) cbs__malloc_error;
@@ -388,7 +396,7 @@ bool cbs__needs_rebuild_nt(const char *target, ...) {
 	struct stat temp;
 	if (!cbs_files_exist(target)) return true;
 	stat(target, &temp);
-	size_t target_mtime = (size_t) temp.st_mtime;
+	size_t target_mtime = (size_t)temp.st_mtime;
 
 	va_list args;
 	va_start(args, target);
@@ -397,7 +405,7 @@ bool cbs__needs_rebuild_nt(const char *target, ...) {
 		if (!cbs_files_exist(dep))
 			cbs_error("Could not open dependency when checking target rebuild");
 		stat(dep, &temp);
-		size_t dep_mtime = (size_t) temp.st_mtime;
+		size_t dep_mtime = (size_t)temp.st_mtime;
 		if (target_mtime < dep_mtime) {
 			va_end(args);
 			return true;
@@ -411,14 +419,14 @@ bool cbs_needs_rebuild_file_paths(const char *target, Cbs_File_Paths deps) {
 	struct stat temp;
 	if (!cbs_files_exist(target)) return true;
 	stat(target, &temp);
-	size_t target_mtime = (size_t) temp.st_mtime;
+	size_t target_mtime = (size_t)temp.st_mtime;
 
 	for (size_t i = 0; i < deps.count; ++i) {
 		const char *dep = deps.items[i];
 		if (!cbs_files_exist(dep))
 			cbs_error("Could not open dependency when checking target rebuild");
 		stat(dep, &temp);
-		size_t dep_mtime = (size_t) temp.st_mtime;
+		size_t dep_mtime = (size_t)temp.st_mtime;
 		if (target_mtime < dep_mtime) return true;
 	}
 	return false;
@@ -434,7 +442,7 @@ int cbs_cmd_run_status(Cbs_Cmd *cmd) {
 	cbs_cmd_build(cmd, NULL);
 	pid_t child_pid;
 	if ((child_pid = fork()) == 0 &&
-	    (execvp(cmd->items[0], (char *const *) cmd->items) == -1))
+	    (execvp(cmd->items[0], (char *const *)cmd->items) == -1))
 		cbs_error("Unable to run command, check command syntax");
 	int stat, status;
 	waitpid(child_pid, &stat, 0);
@@ -456,8 +464,8 @@ int cbs__run_status_nt(const char *string, ...) {
 }
 
 void cbs_rebuild_self(char *const *argv) {
-	const char *this_file_path = argv[0];
-	const char *src_file_path = cbs_string_build(cbs_get_file_dir(this_file_path),
+	const char *this_file_path = argv[0],
+	           *src_file_path = cbs_string_build(cbs_get_file_dir(this_file_path),
 	                                             "/cbs.c");
 	if (!cbs_needs_rebuild(this_file_path, src_file_path, CBS_LIBRARY_PATH))
 		return;
@@ -484,7 +492,7 @@ void cbs_cmd_async_run(Cbs_Async_Procs *procs, Cbs_Cmd *cmd) {
 	if ((proc.pid = fork()) == 0) {
 		dup2(fileno(proc.output), STDOUT_FILENO);
 		dup2(fileno(proc.output), STDERR_FILENO);
-		if (execvp(cmd->items[0], (char *const *) cmd->items) == -1)
+		if (execvp(cmd->items[0], (char *const *)cmd->items) == -1)
 			cbs_error("Unable to run command, check command syntax");
 	}
 
@@ -532,8 +540,8 @@ void cbs_async_wait(Cbs_Async_Procs *procs) {
 }
 
 void cbs__subbuild_nt(const char *dir, ...) {
-	const char *src_file_path = cbs_string_build(dir, "/cbs.c");
-	const char *bin_file_path = cbs_strip_file_ext(src_file_path);
+	const char *src_file_path = cbs_string_build(dir, "/cbs.c"),
+	           *bin_file_path = cbs_strip_file_ext(src_file_path);
 	if (!cbs_files_exist(bin_file_path))
 		cbs_run("cc", "-o", bin_file_path, src_file_path);
 
