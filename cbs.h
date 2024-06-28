@@ -34,8 +34,8 @@
  * void   cbs_rebuild_self              (char *const *argv); [^1]
  *
  * - General purpose -
- * void   cbs_log                       (const char *message);
- * void   cbs_error                     (const char *message);
+ * void   cbs_log                       (const char *string, (const char *)...);
+ * void   cbs_error                     (const char *string, (const char *)...);
  * char * cbs_shift_args                (int *argc_p, char ***argv_p);
  * bool   cbs_string_eq                 (const char *string1,
  *                                       const char *string2);
@@ -130,9 +130,11 @@
 #include <stdio.h>
 #include <unistd.h>
 
-// Internal macros used for creating dynamic arrays
+// Internal macros
 #define cbs__da_init_cap 16
-#define cbs__malloc_error cbs_error("Process ran out of memory")
+#define cbs__indent "  "
+#define cbs__malloc_error \
+	fprintf(stderr, cbs__indent "MALLOC ERROR: Process ran out of memory\n")
 #define cbs__da_struct(Type, Name) \
 	typedef struct { \
 		Type *items; \
@@ -172,14 +174,12 @@
 #define cbs__clear(da) (da)->count = 0
 
 // Utility functions: logging, parsing the command line, modifying file paths
-#define cbs__indent "  "
-#define cbs_log(message) printf(cbs__indent "  LOG: %s\n", message);
-#define cbs_error(message) \
-	do { \
-		fprintf(stderr, cbs__indent "ERROR: %s (%s:%u)\n", message, \
-		        __FILE__, __LINE__); \
-		exit(errno ? (perror(cbs__indent " INFO"), errno) : EXIT_FAILURE); \
-	} while(0)
+#define cbs_log(...) \
+	printf(cbs__indent "  LOG: %s\n", cbs_string_build("", __VA_ARGS__))
+#define cbs_error(...) \
+	exit((fprintf(stderr, cbs__indent "ERROR: %s (%s:%u)\n", \
+	              cbs_string_build("", __VA_ARGS__), __FILE__, __LINE__), \
+	      errno ? (perror(cbs__indent " INFO"), errno) : EXIT_FAILURE))
 char *cbs_shift_args(int *argc_p, char ***argv_p);
 #define cbs_string_eq(string1, string2) strcmp(string1, string2) == 0
 #define cbs_string_build(string, ...) \
@@ -189,11 +189,8 @@ char *cbs_get_file_name(const char *file_path);
 char *cbs_get_file_ext(const char *file_path);
 char *cbs_strip_file_ext(const char *file_path);
 #define cbs_cd(dir) \
-	do { \
-		printf(cbs__indent "cd %s\n", dir); \
-		if (chdir(dir)) \
-			cbs_error(cbs_string_build("Unable to enter directory ", dir)); \
-	} while(0)
+	if (printf(cbs__indent "cd %s\n", dir), chdir(dir)) \
+		cbs_error("Unable to enter directory ", dir)
 
 // File paths
 cbs__da_struct(const char *, Cbs_File_Paths);
@@ -220,7 +217,9 @@ bool cbs_needs_rebuild_file_paths(const char *target, Cbs_File_Paths deps);
 cbs__da_struct(const char *, Cbs_Cmd);
 #define cbs_cmd_build(cmd, ...) \
 	cbs__append_items(const char *, cmd, __VA_ARGS__)
-void cbs_cmd_build_file_paths(Cbs_Cmd *cmd, Cbs_File_Paths file_paths);
+#define cbs_cmd_build_file_paths(cmd, file_paths) \
+	if (file_paths.count > 0) \
+		cbs_file_paths_for_each(file_path, file_paths) cbs_cmd_build(cmd, file_path)
 #define cbs_cmd_print(cmd) \
 	do { \
 		printf(cbs__indent); \
@@ -271,7 +270,6 @@ void cbs_async_wait(Cbs_Async_Procs *procs);
 #include <dirent.h>
 #include <errno.h>
 #include <stdarg.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -284,123 +282,125 @@ char *cbs_shift_args(int *argc_p, char ***argv_p) {
 	return *((*argv_p)++);
 }
 
-char *cbs__string_build_nt(const char *string, ...) {
-	size_t sum_len = strlen(string);
+char *cbs__string_build_nt(const char *string1, const char *string2, ...) {
+	size_t sum_len = strlen(string1) + strlen(string2);
 
 	va_list args;
-	va_start(args, string);
+	va_start(args, string2);
 	const char *arg;
 	while ((arg = va_arg(args, const char *))) sum_len += strlen(arg);
 	va_end(args);
 
 	char *result = malloc((sum_len + 1) * sizeof(char));
-	if (result == NULL) cbs__malloc_error;
-	char *result_p = result;
-	result_p = stpncpy(result_p, string, strlen(string));
+	if (!result) cbs__malloc_error;
+	*result = '\0';
+	strncat(result, string1, strlen(string1));
+	strncat(result, string2, strlen(string2));
 
-	va_start(args, string);
+	va_start(args, string2);
 	while ((arg = va_arg(args, const char *)))
-		result_p = stpncpy(result_p, arg, strlen(arg));
+		strncat(result, arg, strlen(arg));
 	va_end(args);
-	*result_p = '\0';
 
 	return result;
 }
 
 char *cbs_get_file_dir(const char *file_path) {
-	const char *index = rindex(file_path, '/');
+	const char *const index = rindex(file_path, '/');
 	char *result = index ? strndup(file_path, index - file_path) : "";
-	if (result == NULL) cbs__malloc_error;
+	if (!result) cbs__malloc_error;
 	return result;
 }
 
 char *cbs_get_file_name(const char *file_path) {
-	const char *index = rindex(file_path, '/');
-	char *result = index ? strdup(file_path + (index - file_path + 1))
-	                     : strdup(file_path);
-	if (result == NULL) cbs__malloc_error;
+	const char *const index = rindex(file_path, '/');
+	char *result = index ? strndup(file_path + (index - file_path + 1),
+	                               strlen(file_path) - (index - file_path + 1))
+	                     : strndup(file_path, strlen(file_path));
+	if (!result) cbs__malloc_error;
 	return result;
 }
 
 char *cbs_get_file_ext(const char *file_path) {
-	const char *index = rindex(file_path, '.'),
-	           *slash_index = rindex(file_path, '/');
+	const char *const index = rindex(file_path, '.'),
+	           *const slash_index = rindex(file_path, '/');
 	if (slash_index && index < slash_index) return "";
-	char *result = index ? strdup(file_path + (index - file_path))
-	                     : strdup(file_path);
-	if (result == NULL) cbs__malloc_error;
+	char *result = index ? strndup(file_path + (index - file_path),
+	                               strlen(file_path) - (index - file_path))
+	                     : strndup(file_path, strlen(file_path));
+	if (!result) cbs__malloc_error;
 	return result;
 }
 
 char *cbs_strip_file_ext(const char *file_path) {
-	size_t file_ext_len = strlen(cbs_get_file_ext(file_path));
+	const size_t file_ext_len = strlen(cbs_get_file_ext(file_path));
 	char *result = file_ext_len > 0
 	             ? strndup(file_path, strlen(file_path) - file_ext_len)
-	             : strdup(file_path);
-	if (result == NULL) cbs__malloc_error;
+	             : strndup(file_path, strlen(file_path));
+	if (!result) cbs__malloc_error;
 	return result;
 }
 
 void cbs_file_paths_build_file_ext(Cbs_File_Paths *file_paths,
                                    const char *dir_path,
                                    const char *ext) {
-	DIR *dir = opendir(dir_path);
-	if (dir == NULL) cbs_error("Unable to open directory for search");
-	struct dirent *entry = readdir(dir);
-	while (entry) {
-		const char *file_path = entry->d_name;
+	DIR *const dir = opendir(dir_path);
+	if (!dir) cbs_error("Unable to open ", dir_path, " for search");
+	struct dirent *entry;
+	errno = 0;
+	while ((entry = readdir(dir)))
 		if (entry->d_type == DT_REG
-		    && cbs_string_eq(cbs_get_file_ext(file_path), ext)) {
-			char *result_path = malloc((strlen(dir_path) + strlen(file_path) + 2) *
-			                           sizeof(char));
-			if (result_path == NULL) cbs__malloc_error;
-			strncpy(result_path, dir_path, strlen(dir_path) + 1);
-			if (dir_path[strlen(dir_path) - 1] != '/') strcat(result_path, "/");
-			strcat(result_path, file_path);
-			cbs_file_paths_build(file_paths, result_path);
-		}
-		entry = readdir(dir);
-	}
-	if (closedir(dir) == -1) cbs_error("Unable to close directory after search");
+		    && cbs_string_eq(cbs_get_file_ext(entry->d_name), ext))
+			cbs_file_paths_build(file_paths, cbs_string_build(dir_path, "/",
+			                                                  entry->d_name));
+	if (errno) cbs_error("Unable to access entry ", dir_path, "/", entry->d_name);
+	if (closedir(dir)) cbs_error("Unable to close ", dir_path, " after search");
 }
 
 bool cbs__files_exist_nt(const char *file_path, ...) {
 	struct stat temp;
-	if (stat(file_path, &temp) == -1) {
+	if (stat(file_path, &temp)) {
 		if (errno == ENOENT) return false;
-		cbs_error("Unable to access file");
+		cbs_error("Unable to access file ", file_path);
 	}
 
 	va_list args;
 	va_start(args, file_path);
 	const char *arg;
 	while ((arg = va_arg(args, const char *)))
-		if (stat(arg, &temp) == -1) {
+		if (stat(arg, &temp)) {
 			if (errno == ENOENT) {
 				va_end(args);
 				return false;
 			}
-			cbs_error("Unable to access file");
+			cbs_error("Unable to access file ", arg);
 		}
 	va_end(args);
 	return true;
 }
 
-bool cbs__needs_rebuild_nt(const char *target, ...) {
-	struct stat temp;
+bool cbs__needs_rebuild_nt(const char *target, const char *dep, ...) {
 	if (!cbs_files_exist(target)) return true;
+
+	struct stat temp;
 	stat(target, &temp);
-	size_t target_mtime = (size_t)temp.st_mtime;
+	const size_t target_mtime = (const size_t)temp.st_mtime;
+
+	if (!cbs_files_exist(dep))
+		cbs_error("Could not open ", dep, " when checking target rebuild");
+
+	stat(dep, &temp);
+	if (target_mtime < (const size_t)temp.st_mtime) return true;
 
 	va_list args;
-	va_start(args, target);
-	const char *dep;
-	while ((dep = va_arg(args, const char *))) {
-		if (!cbs_files_exist(dep))
-			cbs_error("Could not open dependency when checking target rebuild");
-		stat(dep, &temp);
-		size_t dep_mtime = (size_t)temp.st_mtime;
-		if (target_mtime < dep_mtime) {
+	va_start(args, dep);
+	const char *current_dep;
+	while ((current_dep = va_arg(args, const char *))) {
+		if (!cbs_files_exist(current_dep))
+			cbs_error("Could not open ", current_dep, " when checking target rebuild");
+
+		stat(current_dep, &temp);
+		if (target_mtime < (const size_t)temp.st_mtime) {
 			va_end(args);
 			return true;
 		}
@@ -410,40 +410,36 @@ bool cbs__needs_rebuild_nt(const char *target, ...) {
 }
 
 bool cbs_needs_rebuild_file_paths(const char *target, Cbs_File_Paths deps) {
-	struct stat temp;
 	if (!cbs_files_exist(target)) return true;
-	stat(target, &temp);
-	size_t target_mtime = (size_t)temp.st_mtime;
 
+	struct stat temp;
+	stat(target, &temp);
+	const size_t target_mtime = (const size_t)temp.st_mtime;
+
+	const char *dep;
 	for (size_t i = 0; i < deps.count; ++i) {
-		const char *dep = deps.items[i];
+		dep = deps.items[i];
 		if (!cbs_files_exist(dep))
-			cbs_error("Could not open dependency when checking target rebuild");
+			cbs_error("Could not open ", dep, " when checking target rebuild");
+
 		stat(dep, &temp);
-		size_t dep_mtime = (size_t)temp.st_mtime;
-		if (target_mtime < dep_mtime) return true;
+		if (target_mtime < (const size_t)temp.st_mtime) return true;
 	}
 	return false;
-}
-
-void cbs_cmd_build_file_paths(Cbs_Cmd *cmd, Cbs_File_Paths file_paths) {
-	if (file_paths.count > 0)
-		cbs_file_paths_for_each(file_path, file_paths) cbs_cmd_build(cmd, file_path);
 }
 
 int cbs_cmd_run_status(Cbs_Cmd *cmd) {
 	cbs_cmd_print(*cmd);
 	cbs_cmd_build(cmd, NULL);
 	pid_t child_pid;
-	if ((child_pid = fork()) == 0 &&
-	    (execvp(cmd->items[0], (char *const *)cmd->items) == -1))
+	if ((child_pid = fork()) == 0
+	    && (execvp(cmd->items[0], (char *const *)cmd->items)))
 		cbs_error("Unable to run command, check command syntax");
-	int stat, status;
-	waitpid(child_pid, &stat, 0);
-	if (WIFEXITED(stat)) status = WEXITSTATUS(stat);
-	else status = -1;
 	cbs__clear(cmd);
-	return status;
+
+	int stat;
+	waitpid(child_pid, &stat, 0);
+	return WIFEXITED(stat) ? WEXITSTATUS(stat) : -1;
 }
 
 int cbs__run_status_nt(const char *string, ...) {
@@ -458,17 +454,17 @@ int cbs__run_status_nt(const char *string, ...) {
 }
 
 void cbs_rebuild_self(char *const *argv) {
-	const char *this_file_path = argv[0],
-	           *src_file_path = cbs_string_build(cbs_get_file_dir(this_file_path),
-	                                             "/cbs.c");
-	if (!cbs_needs_rebuild(this_file_path, src_file_path, CBS_LIBRARY_PATH))
+	const char *const current_file_path = argv[0],
+	           *const current_dir = cbs_get_file_dir(current_file_path),
+	           *const src_file_path = cbs_string_build(current_dir, "/cbs.c");
+	if (!cbs_needs_rebuild(current_file_path, src_file_path, CBS_LIBRARY_PATH))
 		return;
-	cbs_log(cbs_string_build("Rebuilding ", this_file_path));
+	cbs_log("Rebuilding ", current_file_path);
 	if (cbs_run_status("cc", "-Wall", "-Wextra", "-Wpedantic",
-	                   "-o", this_file_path, src_file_path))
+	                   "-o", current_file_path, src_file_path))
 		cbs_error("Rebuild unsuccessful, bootstrapping may be necessary");
 	cbs_log("Rebuild successful");
-	if (execvp(this_file_path, argv) == -1)
+	if (execvp(current_file_path, argv))
 		cbs_error("Rebuilt build command ran unsuccessfully, "
 		          "bootstrapping may be necessary");
 }
@@ -477,34 +473,33 @@ void cbs_cmd_async_run(Cbs_Async_Procs *procs, Cbs_Cmd *cmd) {
 	Cbs__Async_Proc proc = {0};
 	proc.cmd = *cmd;
 	proc.cmd.items = malloc(cmd->cap * sizeof(char *));
-	if (proc.cmd.items == NULL) cbs__malloc_error;
+	if (!proc.cmd.items) cbs__malloc_error;
 	memcpy(proc.cmd.items, cmd->items, cmd->count * sizeof(char *));
 	proc.output = tmpfile();
 
 	cbs_cmd_build(cmd, NULL);
-
 	if ((proc.pid = fork()) == 0) {
 		dup2(fileno(proc.output), STDOUT_FILENO);
 		dup2(fileno(proc.output), STDERR_FILENO);
-		if (execvp(cmd->items[0], (char *const *)cmd->items) == -1)
+		if (execvp(cmd->items[0], (char *const *)cmd->items))
 			cbs_error("Unable to run command, check command syntax");
 	}
-
 	cbs__clear(cmd);
+
 	cbs__append_item(procs, proc);
 }
 
 void cbs__file_print(FILE *file, FILE *output) {
-	if (fseek(file, 0, SEEK_END) == -1)
+	if (fseek(file, 0, SEEK_END))
 		cbs_error("Unable to seek file during print");
-	long file_size = ftell(file);
+	const long file_size = ftell(file);
 	if (file_size == -1) cbs_error("Unable to access file during print");
 	if (file_size == 0) return;
-	char *buffer = malloc((file_size + 1) * sizeof(char));
-	if (buffer == NULL) cbs__malloc_error;
-	if (fseek(file, 0, SEEK_SET) == -1)
+	if (fseek(file, 0, SEEK_SET))
 		cbs_error("Unable to seek file during print");
 
+	char *const buffer = malloc((file_size + 1) * sizeof(char));
+	if (!buffer) cbs__malloc_error;
 	size_t file_index = file_size, n;
 	char *buffer_p = buffer;
 	while(file_index > 0) {
@@ -524,22 +519,22 @@ void cbs_async_wait(Cbs_Async_Procs *procs) {
 	for (size_t i = 0; i < procs->count; ++i) {
 		Cbs__Async_Proc proc = procs->items[i];
 		waitpid(proc.pid, &stat, 0);
-		if (WIFEXITED(stat)) status = WEXITSTATUS(stat);
-		else status = -1;
 		cbs_cmd_print(proc.cmd);
-		cbs__file_print(proc.output, status ? stderr : stdout);
+
+		status = WIFEXITED(stat) ? WEXITSTATUS(stat) : -1;
+		cbs__file_print(proc.output, status == 0 ? stdout : stderr);
 		if (status) cbs_error("Previous command ran unsuccessfully, stopping build");
 	}
 	cbs__clear(procs);
 }
 
 void cbs__subbuild_nt(const char *dir, ...) {
-	const char *src_file_path = cbs_string_build(dir, "/cbs.c"),
-	           *bin_file_path = cbs_strip_file_ext(src_file_path);
+	const char *const src_file_path = cbs_string_build(dir, "/cbs.c"),
+	           *const bin_file_path = cbs_strip_file_ext(src_file_path);
 	if (!cbs_files_exist(bin_file_path))
 		cbs_run("cc", "-o", bin_file_path, src_file_path);
 
-	char *cwd = getcwd(NULL, 0);
+	char *const cwd = getcwd(NULL, 0);
 	cbs_cd(dir);
 
 	Cbs_Cmd cmd = {0};
