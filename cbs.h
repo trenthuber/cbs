@@ -31,17 +31,17 @@
  * RET    NAME                          PARAMETERS
  *
  * - Self rebuilding -
- * void   cbs_rebuild_self [^1]         (char *const *argv);
+ * void   cbs_rebuild_self              (char *const *argv); [^1]
  *
  * - General purpose -
- * void   cbs_log                       (const char *fmt, ...);
- * void   cbs_error                     (const char *fmt, ...);
+ * void   cbs_log                       (const char *message);
+ * void   cbs_error                     (const char *message);
  * char * cbs_shift_args                (int *argc_p, char ***argv_p);
  * bool   cbs_string_eq                 (const char *string1,
  *                                       const char *string2);
  * char * cbs_string_build              (const char *string1,
  *                                       const char *string2,
- *                                       (const char *)...); [^2]
+ *                                       (const char *)...);
  * char * cbs_get_file_dir              (const char *file_path);
  * char * cbs_get_file_name             (const char *file_path);
  * char * cbs_get_file_ext              (const char *file_path);
@@ -85,7 +85,8 @@
  * void   cbs_async_wait                (Cbs_Async_Procs *procs);
  *
  * - Subbuild -
- * void   cbs_subbuild [^3]             (const char *dir, (const char *)...);
+ * void   cbs_subbuild                  (const char *dir,
+ *                                       (const char *)...); [^2]
  *
  * [^1] cbs_rebuild_self() assumes your source file is cbs.c in the same
  * directory as the currently running file is in. Thus, this function is only
@@ -94,10 +95,7 @@
  * so it automatically rebuilds when that file is edited (default value is
  * "./cbs.h").
  *
- * [^2] Variadics with a type before them indicate that all arguments passed
- * after that point must be of that type.
- *
- * [^3] cbs_subbuild() assumes your source file is cbs.c in the directory
+ * [^2] cbs_subbuild() assumes your source file is cbs.c in the directory
  * specified and will create the binary file, labeled cbs, in that directory.
  * Variadics passed to it are interpreted as subcommands for that build file.
  *
@@ -174,16 +172,13 @@
 #define cbs__clear(da) (da)->count = 0
 
 // Utility functions: logging, parsing the command line, modifying file paths
-#define cbs_log(...) \
+#define cbs__indent "  "
+#define cbs_log(message) printf(cbs__indent "  LOG: %s\n", message);
+#define cbs_error(message) \
 	do { \
-		printf("LOG: " __VA_ARGS__) \
-		printf("\n"); \
-	while(0)
-#define cbs_error(...) \
-	do { \
-		fprintf(stderr, "ERROR: " __VA_ARGS__); \
-		fprintf(stderr, " (%s:%u)\n", __FILE__, __LINE__); \
-		exit(errno ? (perror("INFO"), errno) : EXIT_FAILURE); \
+		fprintf(stderr, cbs__indent "ERROR: %s (%s:%u)\n", message, \
+		        __FILE__, __LINE__); \
+		exit(errno ? (perror(cbs__indent " INFO"), errno) : EXIT_FAILURE); \
 	} while(0)
 char *cbs_shift_args(int *argc_p, char ***argv_p);
 #define cbs_string_eq(string1, string2) strcmp(string1, string2) == 0
@@ -195,10 +190,9 @@ char *cbs_get_file_ext(const char *file_path);
 char *cbs_strip_file_ext(const char *file_path);
 #define cbs_cd(dir) \
 	do { \
-		chdir(dir); \
-		Cbs_Cmd cmd = {0}; \
-		cbs_cmd_build(&cmd, "cd", dir); \
-		cbs_cmd_print(cmd); \
+		printf(cbs__indent "cd %s\n", dir); \
+		if (chdir(dir)) \
+			cbs_error(cbs_string_build("Unable to enter directory ", dir)); \
 	} while(0)
 
 // File paths
@@ -229,7 +223,7 @@ cbs__da_struct(const char *, Cbs_Cmd);
 void cbs_cmd_build_file_paths(Cbs_Cmd *cmd, Cbs_File_Paths file_paths);
 #define cbs_cmd_print(cmd) \
 	do { \
-		printf("  "); \
+		printf(cbs__indent); \
 		for (size_t i = 0; i < (cmd).count - 1; ++i) printf("%s ", (cmd).items[i]); \
 		printf("%s\n", (cmd).items[(cmd).count - 1]); \
 	} while(0)
