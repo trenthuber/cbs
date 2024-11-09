@@ -10,8 +10,8 @@
  * fully developed and mature build language. That's where cbs comes in. In
  * essence, build scripts written with cbs are only constrained by the
  * capabilities of the C programming language itself, not some superficially
- * created one. While perhaps more verbose than others, C's capabilites as a
- * "real" and fully-fleshed out programming langauge make it worth the effort in
+ * created one. While perhaps more verbose than others, C's capabilities as a
+ * "real" and fully-fleshed out programming language make it worth the effort in
  * the end. To make the process that much easier, much of the functionality that
  * is common in building projects has been wrapped up in this single-file
  * library, including running Bourne shell commands, navigating file trees,
@@ -90,7 +90,7 @@
  *
  * [^1] cbs_rebuild_self() assumes your source file is cbs.c in the same
  * directory as the currently running file is in. Thus, this function is only
- * accessable to call if you've defined CBS_IMPLEMENTATION. Further more, you
+ * accessible to call if you've defined CBS_IMPLEMENTATION. Further more, you
  * can define CBS_LIBRARY_PATH with the path of the cbs.h file you're including
  * so it automatically rebuilds when that file is edited (default value is
  * "./cbs.h").
@@ -529,13 +529,13 @@ void cbs_async_wait(Cbs_Async_Procs *procs) {
 }
 
 void cbs__subbuild_nt(const char *dir, ...) {
-	const char *const src_file_path = cbs_string_build(dir, "/cbs.c"),
+	char *const cwd = getcwd(NULL, 0);
+	cbs_cd(dir);
+
+	const char *const src_file_path = "./cbs.c",
 	           *const bin_file_path = cbs_strip_file_ext(src_file_path);
 	if (!cbs_files_exist(bin_file_path))
 		cbs_run("cc", "-o", bin_file_path, src_file_path);
-
-	char *const cwd = getcwd(NULL, 0);
-	cbs_cd(dir);
 
 	Cbs_Cmd cmd = {0};
 	cbs_cmd_build(&cmd, cbs_string_build("./", cbs_get_file_name(bin_file_path)));
