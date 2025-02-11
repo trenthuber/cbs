@@ -31,8 +31,7 @@ char *addext(char *pp, char *ext) {
 	bp = rindex(pp, '/');
 	bp = bp ? bp + 1 : pp;
 	d = bp - pp;
-	ep = rindex(pp, '.');
-	if (ep < bp) ep = NULL;
+	ep = rindex(bp, '.');
 	b = ep ? ep - bp : strlen(bp);
 	ep = ep ? ep + 1 : ext;
 	l = strncmp(bp, "lib", 3) != 0

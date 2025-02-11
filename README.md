@@ -58,7 +58,9 @@ These are macros used by the library and it expects them to exist. Any flags you
 #define LDFLAGS "-lm", "-Llib/"
 ```
 
-These will be automatically used in all compilations and linkages performed by the build file they're defined in.
+If you ever want to convert a comma separated list of strings to an array of C strings, the simple `CARRAY` macro does so.
+
+The `CFLAGS` and `LDFLAGS` macros will automatically be used in all compilations and linkages performed by the build file they're defined in.
 
 ### Compiling: `cc()`
 
