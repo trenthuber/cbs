@@ -66,7 +66,7 @@ These will be automatically used in all compilations and linkages performed by t
 void cc(char *name, ...);
 ```
 
-The `cc()` function is given a single source file to compile. Extensions are optional and will be assumed to be `.c` if not provided. This makes reusing the same macro for compiling and linking very elegant ([seen here](https://github.com/trenthuber/simplexpm/build.c)). It will then produce its corresponding `.o` file in the same directory as the source file.
+The `cc()` function is given a single source file to compile. Extensions are optional and will be assumed to be `.c` if not provided. This makes reusing the same macro for compiling and linking very elegant ([seen here](https://github.com/trenthuber/simplexpm/blob/f8fbfccbdc4e966c0565e86541fd6a9e6b92ac55/build.c#L38)). It will then produce its corresponding `.o` file in the same directory as the source file.
 
 `cc()` will only compile the object file if it finds the source file has been modified since the last time it compiled the object file. If the object file also depends on other header files that you wish to trigger recompilation should they change, you can add their names after the name of the source file (again, the `.h` is optional and assumed if missing).
 
