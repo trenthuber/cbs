@@ -22,20 +22,20 @@ void *alloc(int s) {
 	return r;
 }
 
-char *addext(char *pp, char *ext, int lpre) {
+char *addext(char *pp, char *ext, int lprf) {
 	char *bp, *ep, *rp, *tp;
-	int d, b, e, l;
+	int d, l, b, e;
 
 	if (pp == NULL) return NULL;
 
 	bp = rindex(pp, '/');
 	bp = bp ? bp + 1 : pp;
 	d = bp - pp;
+	l = lprf && strncmp(bp, "lib", 3) != 0 ? 3 : 0;
 	ep = rindex(bp, '.');
 	b = ep ? ep - bp : strlen(bp);
 	ep = ep ? ep + 1 : ext;
 	e = strlen(ep);
-	l = lpre && strncmp(bp, "lib", 3) != 0 ? 3 : 0;
 	
 	rp = alloc(d + l + b + 1 + e + 1);
 	
