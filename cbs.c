@@ -22,9 +22,9 @@ void *alloc(int s) {
 	return r;
 }
 
-char *addext(char *pp, char *ext) {
+char *addext(char *pp, char *ext, int lpre) {
 	char *bp, *ep, *rp, *tp;
-	int d, b, l, e;
+	int d, b, e, l;
 
 	if (pp == NULL) return NULL;
 
@@ -34,11 +34,8 @@ char *addext(char *pp, char *ext) {
 	ep = rindex(bp, '.');
 	b = ep ? ep - bp : strlen(bp);
 	ep = ep ? ep + 1 : ext;
-	l = strncmp(bp, "lib", 3) != 0
-	    && (strncmp(ep, "a", 1) == 0
-	        || strncmp(ep, "dylib", 5) == 0)
-	    ? 3 : 0;
 	e = strlen(ep);
+	l = lpre && strncmp(bp, "lib", 3) != 0 ? 3 : 0;
 	
 	rp = alloc(d + l + b + 1 + e + 1);
 	
@@ -96,108 +93,91 @@ void cc(char *name, ...) {
 	char *src, *obj, *dep;
 	va_list deps;
 
-	if ((cpid = fork()) == 0) {
-		src = addext(name, "c");
-		obj = addext(name, "o");
-
-		va_start(deps, name);
-		dep = src;
-		do
-			if (checkmod(obj, dep))
-				exec("/usr/bin/cc", (char *[]){"cc", CFLAGS, "-c", "-o", obj, src, NULL},
-				     "Unable to execute compilation of `%s.c'\n", name);
-		while ((dep = addext(va_arg(deps, char *), "h")));
-		va_end(deps);
-
-		exit(EXIT_SUCCESS);
+	if ((cpid = fork())) {
+		pwait(cpid, "Unable to delegate compilation of `%s.c'\n", name);
+		return;
 	}
 
-	pwait(cpid, "Unable to delegate compilation of `%s.c'\n", name);
+	src = addext(name, "c", 0);
+	obj = addext(name, "o", 0);
+
+	va_start(deps, name);
+	dep = src;
+	do if (checkmod(obj, dep))
+		exec("/usr/bin/cc", (char *[]){"cc", CFLAGS, "-c", "-o", obj, src, NULL},
+		     "Unable to execute compilation of `%s.c'\n", name);
+	while ((dep = addext(va_arg(deps, char *), "h", 0)));
+	va_end(deps);
+
+	exit(EXIT_SUCCESS);
 }
 
 void ld(char type, char *output, char *input, ...) {
+	char **fargs, **args;
 	int cpid, status, vn, fn, i;
 	va_list count, inputs;
-	char **fargs, **args;
 
+	input = addext(input, "o", 0);
 	switch (type) {
 	case 'x':
+		fargs = (char *[]){"cc", LDFLAGS, "-o", output, input, NULL};
 		break;
 	case 's':
-	case 'd':
-		output = addext(output, type == 's' ? "a" : "dylib");
+		output = addext(output, "a", 1);
+		fargs = (char *[]){"ar", "-r", output, input, NULL};
 		break;
-	default:
-		fprintf(stderr, "Unknown library type `%c'\n", type);
-		exit(EXIT_FAILURE);
+	case 'd':
+		output = addext(output, "dylib", 1);
+		fargs = (char *[]){"cc", "-dynamiclib", LDFLAGS, "-o", output, input, NULL};
+		break;
 	}
 
-	if ((cpid = fork()) == 0) {
-		va_start(count, input);
-		va_copy(inputs, count);
-		for (vn = 0; va_arg(count, char *); ++vn);
-		va_end(count);
-
-		input = addext(input, "o");
-
-		switch (type) {
-		case 'x':
-			fargs = (char *[]){"cc", LDFLAGS, "-o", output, input, NULL};
-			break;
-		case 's':
-			fargs = (char *[]){"ar", "-r", output, input, NULL};
-			break;
-		case 'd':
-			fargs = (char *[]){"cc", "-dynamiclib", LDFLAGS, "-o", output, input, NULL};
-			break;
-		}
-
-		for (fn = 0; fargs[fn]; ++fn);
-
-		args = alloc((fn + vn + 1) * sizeof(char *));
-		memcpy(args, fargs, fn * sizeof(char *));
-		for (i = fn; i < fn + vn; ++i)
-			args[i] = addext(va_arg(inputs, char *), "o");
-		args[fn + vn] = NULL;
-		va_end(inputs);
-
-		for (i = fn - 1; i < fn + vn; ++i)
-			if (checkmod(output, args[i]))
-				exec(type == 's' ? "/usr/bin/ar" : "/usr/bin/cc", args,
-				     "Unable to execute linking phase of `%s'\n", output);
-
-		exit(EXIT_SUCCESS);
+	if ((cpid = fork())) {
+		pwait(cpid, "Unable to delegate linking phase of `%s'\n", output);
+		return;
 	}
 
-	pwait(cpid, "Unable to delegate linking phase of `%s'\n", output);
+	for (fn = 0; fargs[fn]; ++fn);
+
+	va_start(count, input);
+	va_copy(inputs, count);
+	for (vn = 0; va_arg(count, char *); ++vn);
+	va_end(count);
+
+	args = alloc((fn + vn + 1) * sizeof(char *));
+	memcpy(args, fargs, fn * sizeof(char *));
+	for (i = fn; i < fn + vn; ++i)
+		args[i] = addext(va_arg(inputs, char *), "o", 0);
+	args[fn + vn] = NULL;
+	va_end(inputs);
+
+	for (i = fn - 1; i < fn + vn; ++i)
+		if (checkmod(output, args[i]))
+			exec(type == 's' ? "/usr/bin/ar" : "/usr/bin/cc", args,
+			     "Unable to execute linking phase of `%s'\n", output);
+
+	exit(EXIT_SUCCESS);
 }
 
 void build(char *path) {
-	int pid;
+	int cpid;
 
-	if (!path) {
-		if (!checkmod("build", "build.c")) return;
-		if ((pid = fork()) == 0)
+	if (path && (cpid = fork())) {
+		pwait(cpid, "Unable to delegate execution of `%sbuild'\n", path);
+		printf("cd ..\n");
+		return;
+	}
+
+	if (path && (printf("cd %s\n", path), chdir(path)))
+		fprintf(stderr, "Unable to make `%s' the current working directory: %s\n",
+		        path, strerror(errno));
+
+	if (checkmod("build", "build.c")) {
+		if ((cpid = fork()) == 0)
 			exec("/usr/bin/cc", (char *[]){"cc", "-o", "build", "build.c", NULL},
-				 "Unable to execute compilation of `%s.c'\n", "build");
-		pwait(pid, "Unable to delegate compilation of `%s.c'\n", "build");
-		exec("build", (char *[]){"build", NULL}, "Unable to execute `%s'\n", "build");
-	}
+			     "Unable to execute compilation of `%s.c'\n", "build");
+		pwait(cpid, "Unable to delegate compilation of `%s.c'\n", "build");
+	} else if (!path) return;
 
-	if ((pid = fork()) == 0) {
-		printf("cd %s\n", path);
-		if (chdir(path))
-			fprintf(stderr, "Unable to make `%s' the current working directory: %s\n",
-			        path, strerror(errno));
-		if (checkmod("build", "build.c")) {
-			if ((pid = fork()) == 0)
-				exec("/usr/bin/cc", (char *[]){"cc", "-o", "build", "build.c", NULL},
-				     "Unable to execute compilation of `%sbuild.c'\n", path);
-			pwait(pid, "Unable to delegate compilation of `%sbuild.c'\n", path);
-		}
-		exec("build", (char *[]){"build", NULL}, "Unable to execute `%sbuild'\n", path);
-	}
-
-	pwait(pid, "Unable to delegate execution of `%s'\n", path);
-	printf("cd ..\n");
+	exec("build", (char *[]){"build", NULL}, "Unable to execute `%s'\n", "build");
 }
