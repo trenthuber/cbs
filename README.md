@@ -24,7 +24,7 @@ int main(void) {
 }
 ```
 
-To build your project, you first need to compile and run `build.c`. The inclusion of the `build(NULL);` statement at the top of the build file will recompile `build.c` every subsequent time you run it. This allows you to make changes to the build file without having to manually recompile.
+To build your project, you first need to compile and run `build.c`. The inclusion of the `build(NULL);` statement at the top of the build file will recompile `build.c` every subsequent time you run it (see the [Recursive builds](#recursive-builds) section for details). This allows you to make changes to the build file without having to manually recompile.
 
 ```console
 $ cc -o build build.c
@@ -41,7 +41,7 @@ The advantage of making a build system that only compiles C projects is that it 
 
 ### Preprocessing
 
-Before you include `cbs.c` it is important you define the `CFLAGS` and `LFLAGS` macros. `CFLAGS` gets passed to the C compiler and `LFLAGS` gets passed to the linker. If you have no use for one or both of the flags, then they must be left as empty strings. Any flags you want to pass to the compiler or linker must be written as a comma separated list of C strings with no trailing comma, for example:
+Before you include `cbs.c` it is important you define the `CFLAGS` and `LFLAGS` macros. `CFLAGS` gets passed to the compiler and `LFLAGS` gets passed to the linker. If you have no use for one or both of the flags, then they must be left as empty strings. Any flags you want to pass to the compiler or linker must be written as a comma separated list of C strings with no trailing comma, for example:
 
 ```c
 #define CFLAGS "-Ifoo/", "-Ibar/", "-Dbaz"
