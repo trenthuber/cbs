@@ -2,91 +2,85 @@
 
 Many modern programming languages integrate some form of a build system into their own runtimes, allowing developers to use the same language to write their applications and to build them. This library hopes to bring that functionality to the C language.
 
-cbs is a build system for C projects and is itself written in C. This gives the added bonus of only needing a C compiler to build and compile projects.
+cbs is a build system for C projects and is itself written in C. This gives the added bonus of only needing a C compiler to build and compile C projects.
 
 ## Overview
 
-As opposed to making a build script, you instead make a file called `build.c` which includes `cbs.c`. A simple example is seen below:
+Build "scripts" are written in files called `build.c`. Here is an example of the contents of such a file:
 
 ```c
 #define CFLAGS ""
-#define LDFLAGS ""
+#define LFLAGS ""
 
 #include "cbs.c"
 
 int main(void) {
 	build(NULL);
 
-	CC("main");
-	LD('x', "main", "main");
+	compile("main", NULL);
+	load('x', "main", "main", NULL);
 
 	return 0;
 }
 ```
 
-Next, you compile the build file into an executable. You only need to do this once if you include the `build(NULL);` statement at the top of the build file. In that case every subsequent time you call `./build` it will recompile and rerun if necessary.
+To build your project, you first need to compile and run `build.c`. The inclusion of the `build(NULL);` statement at the top of the build file will recompile `build.c` every subsequent time you run it. This allows you to make changes to the build file without having to manually recompile.
 
 ```console
-% cc -o build build.c
-```
-
-Running the resulting `./build` executable will then build your project as described in the build file. Then you can run whatever was meant to be built, in this case a hello world program:
-
-```console
-% ./build
-% ./main
+$ cc -o build build.c
+$ ./build
+cc -c -o main.o main.c                                                                                                                   
+cc -o main main.o
+$ ./main
 Hello, world!
 ```
 
-## Usage
+## Detailed usage
 
-The advantage of only supporting C projects is that there are really only three things that need to be covered: compiling translation units to object files, linking object files together, and recursing the build into subdirectories.
+The advantage of making a build system that only compiles C projects is that it can be made dead simple. C code just needs to be compiled and linked, and perhaps it would be nice to recurse the build into subdirectories. cbs uses three simple functions accordingly: [`compile()`](#compiling) for compiling, [`load()`](#linking) for linking, and [`build()`](#recursive-builds) for recursion.
 
-### Preprocessing: `CFLAGS` and `LDFLAGS`
+### Preprocessing
 
-Before you include `cbs.c` it is important you define the `CFLAGS` and `LDFLAGS` macros. Their use should be obvious. If you have no use for one or both of the flags, then they must be left as empty strings:
-
-```c
-#define CFLAGS ""
-#define LDFLAGS ""
-```
-
-These are macros used by the library and it expects them to exist. Any flags you want to pass to the compiler or linker must be written as a comma separated list of C strings with no trailing comma, for example:
+Before you include `cbs.c` it is important you define the `CFLAGS` and `LFLAGS` macros. `CFLAGS` gets passed to the C compiler and `LFLAGS` gets passed to the linker. If you have no use for one or both of the flags, then they must be left as empty strings. Any flags you want to pass to the compiler or linker must be written as a comma separated list of C strings with no trailing comma, for example:
 
 ```c
 #define CFLAGS "-Ifoo/", "-Ibar/", "-Dbaz"
-#define LDFLAGS "-lm", "-Llib/"
+#define LFLAGS "-lm", "-Llib/"
 ```
 
-If you ever want to convert a comma separated list of strings to an array of C strings, the simple `CARRAY` macro does so.
+The `CFLAGS` and `LFLAGS` macros will automatically be used in all `compile()` and `load()` calls respectively.
 
-The `CFLAGS` and `LDFLAGS` macros will automatically be used in all compilations and linkages performed by the build file they're defined in.
-
-### Compiling: `cc()`
+### Compiling
 
 ```c
-void cc(char *name, ...);
+void compile(char *name, ...);
 ```
 
-The `cc()` function is given a single source file to compile. Extensions are optional and will be assumed to be `.c` if not provided. This makes reusing the same macro for compiling and linking very elegant ([seen here](https://github.com/trenthuber/simplexpm/blob/f8fbfccbdc4e966c0565e86541fd6a9e6b92ac55/build.c#L38)). It will then produce its corresponding `.o` file in the same directory as the source file.
+The `compile()` function is given a single source file to compile. File extensions are redundant and thus implicit in cbs, so don't use them. cbs will generate an object file of the same name and in the same directory as the source file you give it (notice this gives us the ability to reuse the list of source file names as object file names for the linker).[^1]
 
-`cc()` will only compile the object file if it finds the source file has been modified since the last time it compiled the object file. If the object file also depends on other header files that you wish to trigger recompilation should they change, you can add their names after the name of the source file (again, the `.h` is optional and assumed if missing).
+[^1]: Notice if we put the list of comma separated C strings in a macro, then we can pass it both to function calls and to array initialization. Using them in a null terminated array allows us to iterate through the array for names of source files to compile, while using the macro in a function call allows us to link all the object files generated by the compilation. This is the elegance of dropping the file extensions.
 
-In all cases, `cc()` requires a null pointer to terminate the arguments (one common convention for implementing C variatics). If you find the syntax unsightly (as I do) or often forget them (as I do), there's a simple `CC` macro which calls `cc()` with a null pointer automatically added.
+`compile()` will only run if it finds the source file has been modified since the last time it compiled the resulting object file. This is similar to the caching behavior in most other build systems.
 
-An example of compiling `main.c` which depends on `foo.h` and `bar.h` and produces the file `main.o`:
+If the object file also depends on other header files and you wish to trigger recompilation should the headers change, you can add their names (again, no extensions) after the name of the source file.
+
+An example of compiling `main.c` which depends on `foo.h` and `bar.h`. This function call will produce the file `main.o`:
 
 ```c
-CC("main", "foo", "bar");
+compile("main", "foo", "bar", NULL);
 ```
 
-### Linking: `ld()`
+It should be noted too that due to variatics in C, `compile()` requires a terminating null pointer in all cases.
+
+### Linking
 
 ```c
-void ld(char type, char *output, char *input, ...);
+void load(char type, char *output, char *input, ...);
 ```
 
-The first argument to `ld()` is the type of file to link. The options are:
+The first argument to `load()`[^2] is the type of file to link. The options are:
+
+[^2]: Although the term "linking" is far more common to use nowadays, the original term when UNIX was first created was "loading," so I use it here to name the function that does the linking. Also the name "link" is already taken on UNIX based systems.
 
 ```
 'x' - executable
@@ -94,34 +88,33 @@ The first argument to `ld()` is the type of file to link. The options are:
 'd' - dynamically linked library
 ```
 
-The second argument is the name of the output. As mentioned above, the system will automatically add the correct file extension if not provided depending on `type`. It is also common to prepend `lib` to files that are static or dynamic libraries; this is similarly optional and will be automatically prepended if needed.
+The second argument is the name of the output. As mentioned above, the system will automatically add the correct file extension so there's no need to provide one. It is also common to prepend `lib` to files that are static or dynamic libraries; this is similarly done automatically, so you don't need to include it when naming the libraries (this is even considered when the name of the library is prepended by a path). This allows you to use the same name to refer to the library as you would when passing it to the linker's `-l` flag.
 
-The rest of the arguments are the names of the files you want to link together. It is assumed that any file that doesn't have an extension is an object file, so if passing static or dynamic libraries, make sure to include the extensions. It should be noted that you can often reuse the list of names for source files as object files without any modification since they normally correspond one to one, have the same name, and cbs very conveniently doesn't require extensions in file names where it can be assumed.
+The rest of the arguments are the names of the files you want to link together (at least one is required). All files are assumed to be object files (static and dynamic libraries are linked through the linker's aforementioned `-l` flag).
 
-Similar to `cc()` and `CC`, the `ld()` function expects a null pointer as the last argument which the `LD` macro provides automatically.
-
-An example of linking `a.o`, `lib/libb.dylib` (sorry, macOS), and `c.o` into a static library, `libmain.a`:
+An example of linking `a.o`, `libB.a`, and `c.o` into a static library, `libmain.a`:
 
 ```c
-LD('s', "main", "a", "lib/b.dylib", "c");
+#define LFLAGS "-lB"
+...
+load('s', "main", "a", "c", NULL);
 ```
 
-### Recursive builds: `build()`
+For the same reason as `compile()`, the `load()` function requires a null pointer as the last argument.
 
-It is often adventagous to compartmentalize projects into a number of subdirectories, either to keep dependencies organized or to have the final build components be independent of each other until it's time to link. Additionally, while working on the code in one subdirectory, it is rare we'd need to recompile the entire project. It would be nice to have a build system that allows us to compile things part by part or all at once without redundancy.
-
-The usual way this is done is by having build scripts be able to run other build scripts. Thus, you can make a build script for a subdirectory that does everything it needs to do, and then have the build script in the directory above call that script when it needs to compile that subdirectory. The elegance to this approach is that you can reuse the build scripts from all your subdirectories in the build process for the whole project.
+### Recursive builds
 
 ```c
 void build(char *path);
 ```
 
-cbs has a similar feature and it's used via the `build()` function which gets passed a single argument: the path to the subdirectory you want to build. When called, it will switch to the directory corresponding to the path, run the `build` file found there (recompiling `build.c` if necessary), and change back to the directory it came from. Thus, when making a build script in a subdirectory you can write it with all paths relative to that directory and it will translate even if you build it from another directory with a call to `build()`.
+It is often adventagous to compartmentalize projects into a number of subdirectories both for organizational purposes and for rebuilding parts at a time without rebuilding the whole thing. The usual way this is done is by placing build scripts in any subdirectory you want to rebuild on its own. But when it comes time for the overall build, we need a way to have the main build script call all the other ones (among other things). This is what the `build()` function is used for.
 
-This concept can actually be reused to have a build executable rebuild itself if its own `build.c` file is modified. By passing `NULL` as the argument, `build()` will recompile and rerun the `build.c` file in it's own directory. Putting `build(NULL);` at the top `main()` in every build file means the programmer only needs to manually compile the top level build file once. Every other time in every other subdirectory rebuilding is covered when running `./build`.
+`build()` gets passed the name of the subdirectory you want to build. The path can be either absolute or relative to the directory the current build executable is being run in. This directory you pass it must have a `build.c` file in it which will be compiled (recompiled if needed) and ran. If `NULL` is passed to build, this has the effect of not switching directories and just recompiling (if necessary) and rerunning (if necessary) the build executable in the current directory. This is why we include `build(NULL);` at the start of build files we want to automatically recompile.
 
-An example of building the contents of the folder `abc/src/`:
+An example of building the contents of the directories `abc/src/` and `/usr/local/proj/src/`:
 
 ```c
 build("abc/src/");
+build("/usr/local/proj/src/");
 ```
