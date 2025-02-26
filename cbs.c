@@ -31,10 +31,10 @@ char *extend(char *path, char *ext, int lib) {
 	e = strlen(ext);
 
 	tp = rp = alloc(d + l + b + e + 1);
-	tp = strncpy(tp, path, d);
-	tp = strncpy(tp + d, "lib", l);
-	tp = strncpy(tp + l, bp, b);
-	strncpy(tp + b, ext, e + 1);
+	tp = stpncpy(tp, path, d);
+	tp = stpncpy(tp, "lib", l);
+	tp = stpncpy(tp, bp, b);
+	stpncpy(tp, ext, e + 1);
 
 	return rp;
 }
