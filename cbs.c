@@ -8,143 +8,160 @@
 
 extern char **environ;
 
-void *alloc(int s) {
-	void *r;
+char **cflags;
+char **lflags;
 
-	if ((r = malloc(s))) return r;
+void error(char *fmt, ...) {
+	va_list args;
 
-	perror(NULL);
+	fprintf(stderr, "cbs: ");
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+	if (errno) fprintf(stderr, ": %s", strerror(errno));
+	fprintf(stderr, "\n");
+
 	exit(EXIT_FAILURE);
 }
 
-char *extend(char *path, char *ext, int lib) {
-	char *bp, *rp, *tp;
-	int d, l, b, e;
+void *alloc(size_t size) {
+	void *r;
 
-	if (path == NULL) return NULL;
+	if (!(r = malloc(size))) error("Memory allocation");
 
-	bp = rindex(path, '/');
-	bp = bp ? bp + 1 : path;
+	return r;
+}
+
+char *extend(char *path, char *ext) {
+	char *bp, *ep, *rp, *tp;
+	int d, b, e, l;
+
+	if (!path) return NULL;
+
+	bp = (bp = rindex(path, '/')) ? bp + 1 : path;
 	d = bp - path;
-	l = lib ? 3 : 0;
-	b = strlen(bp);
-	e = strlen(ext);
+	b = (ep = rindex(bp, '.')) ? ep - bp : (ep = ext, strlen(bp));
+	if (*ext == '!') ep = ext + 1;
+	e = strlen(ep);
+	l = strncmp(ep, ".a", e) == 0 || strncmp(ep, ".dylib", e) == 0 ? 3 : 0;
 
 	tp = rp = alloc(d + l + b + e + 1);
 	tp = stpncpy(tp, path, d);
 	tp = stpncpy(tp, "lib", l);
 	tp = stpncpy(tp, bp, b);
-	stpncpy(tp, ext, e + 1);
+	stpncpy(tp, ep, e + 1);
 
 	return rp;
 }
 
-int modified(char *tpath, char *dpath) {
-	struct stat dstat, tstat;
+int modified(char *target, char *dep) {
+	struct stat tstat, dstat;
 
-	if (stat(dpath, &dstat) == -1) {
-		fprintf(stderr, "Unable to stat `%s': %s\n", dpath, strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-	errno = 0;
-	if (stat(tpath, &tstat) == -1 && errno != ENOENT) {
-		fprintf(stderr, "Unable to stat `%s': %s\n", tpath, strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-	return errno == ENOENT || dstat.st_mtime > tstat.st_mtime;
+	if (stat(target, &tstat) == -1 && errno != ENOENT)
+		error("Unable to stat `%s'", target);
+	if (stat(dep, &dstat) == -1) error("Unable to stat `%s'", dep);
+
+	return errno == ENOENT || tstat.st_mtime < dstat.st_mtime;
 }
 
 void run(char *path, char **args, char *what, char *who) {
 	int i;
 
-	for (i = 0; args[i]; ++i) if (*args[i] != '\0') printf("%s ", args[i]);
+	for (i = 0; args[i]; ++i) printf("%s ", args[i]);
 	printf("\n");
 
-	if (execve(path, args, environ) == -1) {
-		fprintf(stderr, "Unable to run the %s of `%s': %s\n",
-		        what, who, strerror(errno));
-		exit(EXIT_FAILURE);
-	}
+	if (execve(path, args, environ) == -1)
+		error("Unable to run %s of `%s'", what, who);
 }
 
 void await(int cpid, char *what, char *who) {
 	int status;
 
-	if (cpid == -1) {
-		fprintf(stderr, "Unable to delegate the %s of `%s': %s\n",
-		        what, who, strerror(errno));
+	if (cpid == -1) error("Unable to delegate the %s of `%s'", what, who);
+	if (waitpid(cpid, &status, 0) == -1)
+		error("Unable to await the %s of `%s'", what, who);
+	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
 		exit(EXIT_FAILURE);
-	}
-	if (waitpid(cpid, &status, 0) == -1) {
-		fprintf(stderr, "Unable to await the %s of %s: %s\n",
-		        what, who, strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-	if (WIFEXITED(status) && WEXITSTATUS(status) != 0) exit(EXIT_FAILURE);
 }
 
-void compile(char *name, ...) {
-	char *src, *dep, *obj;
+void compile(char *src, ...) {
+	int fn, cpid;
+	char **args, **p, *obj, *dep;
 	va_list deps;
-	int cpid;
 
-	dep = src = extend(name, ".c", 0);
-	obj = extend(name, ".o", 0);
+	fn = 0;
+	if (cflags) while (cflags[fn]) ++fn;
+	p = args = alloc((5 + fn + 1) * sizeof*args);
 
-	va_start(deps, name);
+	*p++ = "cc";
+	if (cflags) for (fn = 0; cflags[fn]; *p++ = cflags[fn++]);
+	*p++ = "-c";
+	*p++ = "-o";
+	*p++ = obj = extend(src, "!.o");
+	*p++ = src = extend(src, ".c");
+	*p = NULL;
+
+	dep = strdup(src);
+	va_start(deps, src);
 	do if (modified(obj, dep)) {
-		if ((cpid = fork()) == 0)
-			run("/usr/bin/cc", (char *[]){"cc", CFLAGS, "-c", "-o", obj, src, NULL},
-			    "compilation", src);
+		if ((cpid = fork()) == 0) run("/usr/bin/cc", args, "compilation", src);
 		await(cpid, "compilation", src);
 		break;
-	} while ((dep = extend(va_arg(deps, char *), ".h", 0)));
+	} while (free(dep), dep = extend(va_arg(deps, char *), ".h"));
 	va_end(deps);
+
+	free(src);
+	free(obj);
+	free(args);
 }
 
-void load(char type, char *output, char *input, ...) {
-	char **fargs, **args;
-	int fn, vn, i, cpid;
-	va_list count, inputs;
+void load(char type, char *target, char *obj, ...) {
+	int fn, vn, cpid;
+	va_list count, objs;
+	char **args, **p, *path, **o;
 
-	input = extend(input, ".o", 0);
-	switch (type) {
-	case 'x':
-		fargs = (char *[]){"cc", LFLAGS, "-o", output, input, NULL};
-		break;
-	case 's':
-		output = extend(output, ".a", 1);
-		fargs = (char *[]){"ar", "-r", output, input, NULL};
-		break;
-	case 'd':
-		output = extend(output, ".dylib", 1);
-		fargs = (char *[]){"cc", "-dynamiclib", LFLAGS, "-o", output, input, NULL};
-		break;
-	default:
-		fprintf(stderr, "Unknown load type `%c'\n", type);
-		exit(EXIT_FAILURE);
-	}
-	for (fn = 0; fargs[fn]; ++fn);
-
-	va_start(count, input);
-	va_copy(inputs, count);
+	fn = 0;
+	if (lflags) while (lflags[fn]) ++fn;
+	va_start(count, obj);
+	va_copy(objs, count);
 	for (vn = 0; va_arg(count, char *); ++vn);
 	va_end(count);
+	p = args = alloc((5 + fn + vn + 1) * sizeof*args);
 
-	args = alloc((fn + vn + 1) * sizeof(char *));
-	memcpy(args, fargs, fn * sizeof(char *));
-	for (i = fn; i < fn + vn; ++i)
-		args[i] = extend(va_arg(inputs, char *), ".o", 0);
-	args[fn + vn] = NULL;
-	va_end(inputs);
+	path = "/usr/bin/cc";
+	*p++ = "cc";
+	switch (type) {
+	case 'd':
+		*p++ = "-dynamiclib";
+	case 'x':
+		if (lflags) for (fn = 0; lflags[fn]; *p++ = lflags[fn++]);
+		*p++ = "-o";
+		*p++ = target = type == 'd' ? extend(target, ".dylib") : strdup(target);
+		break;
+	case 's':
+		path = "/usr/bin/ar";
+		*(p - 1) = "ar";
+		*p++ = "-r";
+		*p++ = target = extend(target, ".a");
+		break;
+	default:
+		error("Unknown linking type `%c'", type);
+	}
+	o = p;
+	*o++ = extend(obj, ".o");
+	while ((*o++ = extend(va_arg(objs, char *), ".o")));
+	va_end(objs);
 
-	for (i = fn - 1; i < fn + vn; ++i) if (modified(output, args[i])) {
-		if ((cpid = fork()) == 0)
-			run(type == 's' ? "/usr/bin/ar" : "/usr/bin/cc",
-			    args, "loading", output);
-		await(cpid, "loading", output);
+	o = p;
+	while (*o) if (modified(target, *o++)) {
+		if ((cpid = fork()) == 0) run(path, args, "linking", target);
+		await(cpid, "linking", target);
 		break;
 	}
+
+	while (*p) free(*p++);
+	free(target);
+	free(args);
 }
 
 void build(char *path) {
@@ -157,11 +174,7 @@ void build(char *path) {
 			return;
 		}
 		printf("cd %s\n", path);
-		if (chdir(path)) {
-			fprintf(stderr, "Unable to make `%s' the current working directory: %s\n",
-			        path, strerror(errno));
-			exit(EXIT_FAILURE);
-		}
+		if (chdir(path)) error("Unable to set working directory to `%s'", path);
 	}
 
 	if (modified("build", "build.c")) {
@@ -171,5 +184,5 @@ void build(char *path) {
 		await(cpid, "compilation", "build.c");
 	} else if (!path) return;
 
-	run("build", (char *[]){"build", NULL}, "execution", "build");
+	run("build", (char *[]){"./build", NULL}, "execution", "build");
 }
