@@ -8,8 +8,7 @@
 
 extern char **environ;
 
-char **cflags;
-char **lflags;
+char **cflags, **lflags;
 
 void error(char *fmt, ...) {
 	va_list args;

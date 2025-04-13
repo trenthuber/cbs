@@ -6,7 +6,7 @@ cbs is a build system for C projects and is itself written in C.
 
 ## Overview
 
-Build "scripts" are written in files called `build.c`. Here is a minimal example of the contents of such a file:
+Build "scripts" are written in files called `build.c`. Here is a minimal example of the contents of such a file.
 
 ```c
 #include "cbs.c"
@@ -21,7 +21,7 @@ int main(void) {
 }
 ```
 
-To build your project, you first need to manually compile `build.c` and run the resulting executable, called `build`:
+To build your project, you first need to manually compile `build.c` and run the resulting executable, called `build`.
 
 ```console
 $ cc -o build build.c
@@ -32,7 +32,7 @@ $ ./main
 Hello, world!
 ```
 
-The inclusion of the `build(NULL);` statement at the top of the build file means that when you modify the build file after compiling the build executable, you don't need to recompile the build file again as the old executable will recompile it for you and rerun the new build executable automatically. This means **you only need to manually compile `build.c` once, even if you modify it later**:
+The inclusion of the `build(NULL);` statement at the top of the build file means that when you modify the build file after compiling the build executable, you don't need to recompile the build file again as the old executable will recompile it for you and rerun the new build executable automatically. This means **you only need to manually compile `build.c` once, even if you modify it later**.
 
 ```console
 $ touch main.c build.c
@@ -63,7 +63,7 @@ If the source file uses project header files and you wish to trigger recompilati
 
 To set flags to be passed to the compiler, the predefined `cflags` variable is used by setting it equal to an array of C strings which is terminated with a null pointer. Unless reinitialized, the same flags will be used in all subsequent `compile()` calls. `cflags` can be set to a null pointer when no flags are needed.
 
-An example of compiling `main.c` which depends on `foo.h` and `bar.h`. This function call will produce the file `main.o`:
+An example of compiling `main.c` which depends on `foo.h` and `bar.h`. This function call will produce the file `main.o`.
 
 ```c
 cflags = (char *[]){"-Wall", "-O3", NULL};
@@ -76,7 +76,7 @@ compile("main", "foo", "bar", NULL);
 void load(char type, char *target, char *obj, ...);
 ```
 
-The first argument to `load()`[^2] is the type of the target file. The options are:
+The first argument to `load()`[^2] is the type of the target file. The options are as follows.
 
 [^2]: Although the term "linking" is far more common to use nowadays, the original term when UNIX was first created was "loading," so I use it here to name the function that does the linking. Also the name "link" is already taken on UNIX based systems.
 
@@ -92,7 +92,7 @@ The rest of the arguments are the names of the files you want to link together. 
 
 In a similar way as compiling, the predefined `lflags` variable can be used to define flags for the linker.
 
-An example of linking `liba.dylib`, `b.o`, and `libc.a` as a statically linked library `libmain.a`:
+An example of linking `liba.dylib`, `b.o`, and `libc.a` as a statically linked library `libmain.a`.
 
 ```c
 lflags = (char *[]){"-la", NULL};
@@ -109,7 +109,7 @@ It is often adventagous to compartmentalize projects into a number of subdirecto
 
 `build()` gets passed the name of the subdirectory you want to build, either as an absolute or relative path. Another philosophy taken by cbs is that **relative paths in a build file are always assumed to be with respect to the directory that that build file is in**. The directory you pass `build()` must have a `build.c` file in it which will be compiled and run (of course being recompiled and rerun if needed). If `path` is a null pointer, this has the effect of staying in the current directory and (again, if necessary) recompiling the build file and rerunning the build executable therein. In other words, in addition to orchestrating recursive builds, this function is also used to automate build executables rebuilding themselves and is thus why we generally include the `build(NULL);` statement at the start of build files.
 
-An example of building the contents of the directories `abc/src/` and `/usr/local/proj/src/`:
+An example of building the contents of the directories `abc/src/` and `/usr/local/proj/src/`.
 
 ```c
 build("abc/src/");
