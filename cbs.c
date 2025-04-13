@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/errno.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 extern char **environ;
@@ -13,12 +14,12 @@ char **cflags, **lflags;
 void error(char *fmt, ...) {
 	va_list args;
 
-	fprintf(stderr, "cbs: ");
+	dprintf(STDERR_FILENO, "cbs: ");
 	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
+	vdprintf(STDERR_FILENO, fmt, args);
 	va_end(args);
-	if (errno) fprintf(stderr, ": %s", strerror(errno));
-	fprintf(stderr, "\n");
+	if (errno) dprintf(STDERR_FILENO, ": %s", strerror(errno));
+	dprintf(STDERR_FILENO, "\n");
 
 	exit(EXIT_FAILURE);
 }
@@ -37,9 +38,9 @@ char *extend(char *path, char *ext) {
 
 	if (!path) return NULL;
 
-	bp = (bp = rindex(path, '/')) ? bp + 1 : path;
+	bp = (bp = strrchr(path, '/')) ? bp + 1 : path;
 	d = bp - path;
-	b = (ep = rindex(bp, '.')) ? ep - bp : (ep = ext, strlen(bp));
+	b = (ep = strrchr(bp, '.')) ? ep - bp : (ep = ext, strlen(bp));
 	if (*ext == '!') ep = ext + 1;
 	e = strlen(ep);
 	l = strncmp(ep, ".a", e) == 0 || strncmp(ep, ".dylib", e) == 0 ? 3 : 0;
