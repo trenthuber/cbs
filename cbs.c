@@ -94,8 +94,8 @@ void await(pid_t cpid, char *what, char *who) {
 
 void compile(char *src, ...) {
 	size_t f;
-	char **args, **p, *obj, *dep;
-	va_list deps;
+	char **args, **p, *obj, *hdr;
+	va_list hdrs;
 	pid_t cpid;
 
 	if (f = 0, cflags) while (cflags[f]) ++f;
@@ -106,18 +106,18 @@ void compile(char *src, ...) {
 	*p++ = "-c";
 	*p++ = "-o";
 	*p++ = obj = extend(src, "!.o");
-	*p++ = src = extend(src, ".c");
+	*p++ = hdr = src = extend(src, ".c");
 	*p = NULL;
 
-	dep = src;
-	va_start(deps, src);
-	do if (modified(obj, dep)) {
+	va_start(hdrs, src);
+	do if (modified(obj, hdr = extend(hdr, ".h"))) {
 		if ((cpid = fork()) == 0) run("/usr/bin/cc", args, "compilation", src);
 		await(cpid, "compilation", src);
 		break;
-	} while (free(dep), dep = extend(va_arg(deps, char *), ".h"));
-	va_end(deps);
+	} while (free(hdr), hdr = va_arg(hdrs, char *));
+	va_end(hdrs);
 
+	free(src);
 	free(obj);
 	free(args);
 }
@@ -125,7 +125,7 @@ void compile(char *src, ...) {
 void load(char type, char *target, char *obj, ...) {
 	va_list count, objs;
 	size_t o, f;
-	char **args, **p, *path, **fp, **a;
+	char **args, **p, **a, **fp, *path;
 	pid_t cpid;
 
 	va_start(count, obj);
@@ -133,34 +133,32 @@ void load(char type, char *target, char *obj, ...) {
 	for (o = 1; va_arg(count, char *); ++o);
 	va_end(count);
 	if (f = 0, lflags) while (lflags[f]) ++f;
-	args = alloc((4 + o + f + 1) * sizeof*args);
+	args = alloc((3 + o + 1 + f + 1) * sizeof*args);
+	fp = (a = (p = args) + 3) + o;
 
-	p = args + 1;
 	switch (type) {
 	case 'd':
-		*p++ = "-shared";
 		target = extend(target, DYEXT);
+		--a;
+		*fp++ = "-shared";
 	case 'x':
 		path = "/usr/bin/cc";
-		*args = "cc";
+		*p++ = "cc";
 		*p++ = "-o";
-		fp = p + o + 1;
-		a = args + 3;
 		break;
 	case 's':
 		path = "/usr/bin/ar";
-		*args = "ar";
+		*p++ = "ar";
 		*p++ = "-r";
+		target = extend(target, ".a");
 		fp = p;
 		a = p += f;
-		target = extend(target, ".a");
 		break;
 	default:
-		error("Unknown linking type `%c'", type);
+		error("Unknown target type `%c'", type);
 	}
 	*p++ = target;
-	*p++ = extend(obj, ".o");
-	while ((*p = extend(va_arg(objs, char *), ".o"))) ++p;
+	do *p++ = extend(obj, ".o"); while ((obj = va_arg(objs, char *)));
 	va_end(objs);
 	if (lflags) for (f = 0; lflags[f]; *fp++ = lflags[f++]);
 	if (fp > p) *fp = NULL;
@@ -173,7 +171,7 @@ void load(char type, char *target, char *obj, ...) {
 		break;
 	}
 
-	while (a != fp) free(*a++);
+	while (a < fp) free(*a++);
 	free(args);
 }
 
