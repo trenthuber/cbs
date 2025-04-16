@@ -86,17 +86,19 @@ The first argument to `load()`[^2] is the type of the target file. The options a
 'd' - dynamically linked library
 ```
 
-The second argument is the name of the target. There is no assumed typical file extension for the target as executables commonly lack them. It is also common to prepend `lib` to files that are static or dynamic libraries; this is done automatically and in a nature similar to typical file extensions. This allows you to use the same name to refer to a statically linked library in the same way you would when refering to a dynamically linked library in the linker flags.
+The second argument is the name of the target. There is no assumed typical file extension for the target as executables commonly lack them. It is also common to prepend `lib` to files that are static or dynamic libraries; this is done automatically and in a nature similar to typical file extensions. The idea is similar to the manner in which you would typically pass system libraries to the linker flag `-l`.
 
-The rest of the arguments are the names of the files you want to link together. The typical file extension for these files is `.o`. Generally the only other files that would use a different file extension would be statically linked libraries (note that dynamically linked libraries aren't really linked in the same way as object files nor statically linked libraries and should thus be passed as linker flags instead). As is the case with compiling, **the arguments passed to `load()` must be terminated with a null pointer**.
+The rest of the arguments are the names of the files you want to link together. The typical file extension for these files is `.o`. Generally the only other files that would use a different file extension would be statically linked libraries or dynamically linked libraries (the linker flag `-l` should be used to link system libraries as opposed to project libraries). As is the case with compiling, **the arguments passed to `load()` must be terminated with a null pointer**.
 
 In a similar way as compiling, the predefined `lflags` variable can be used to define flags for the linker.
 
-An example of linking `liba.dylib`, `b.o`, and `libc.a` as a statically linked library `libmain.a`.
+The `DYEXT` macro has been defined which represents the platform-dependent file extension for dyanmic libraries, `".dylib"` for macOS and `".so"` for anything else. This can be used to allow portability of build files.
+
+An example of linking `liba.dylib` (or `liba.so`), `b.o`, `libc.a`, and the system math library as a statically linked library `libmain.a`.
 
 ```c
-lflags = (char *[]){"-la", NULL};
-load('s', "main", "b", "c.a", NULL);
+lflags = (char *[]){"-lm", NULL};
+load('s', "main", "a" DYEXT, "b", "c.a", NULL);
 ```
 
 ### Recursive builds

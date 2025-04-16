@@ -30,38 +30,51 @@ void error(char *fmt, ...) {
 	exit(EXIT_FAILURE);
 }
 
-void *alloc(size_t s) {
+void *allocate(size_t s) {
 	void *r;
 
 	if (!(r = malloc(s))) error("Memory allocation");
 
-	return r;
+	return memset(r, 0, s);
 }
 
 char *extend(char *path, char *ext) {
-	char *bp, *ep, *r, *p;
-	size_t d, b, l, e;
+	char *dp, *bp, *e, *r;
+	size_t d, b, l;
 
-	if (!path) return NULL;
+	if (!(dp = path)) return NULL;
 
-	bp = (bp = strrchr(path, '/')) ? bp + 1 : path;
-	d = bp - path;
-	b = (ep = strrchr(bp, '.')) ? ep - bp : (ep = ext, strlen(bp));
-	if (*ext == '!') ep = ext + 1;
-	l = strcmp(ep, ".a") == 0 || strcmp(ep, DYEXT) == 0 ? 3 : 0;
-	e = strlen(ep);
+	bp = (bp = strrchr(dp, '/')) ? bp + 1 : dp;
+	d = bp - dp;
+	b = (e = strrchr(bp, '.')) ? e - bp : (e = ext, strlen(bp));
+	if (*ext == '!') e = ++ext;
+	l = strcmp(e, ".a") == 0 || strcmp(e, DYEXT) == 0 ? 3 : 0;
 
-	p = r = alloc(d + l + b + e + 1);
-	p = stpncpy(p, path, d);
-	p = stpncpy(p, "lib", l);
-	p = stpncpy(p, bp, b);
-	strcpy(p, ep);
+	if (strcmp(e, DYEXT) == 0) {
+		path = d ? strndup(dp, d) : strdup(".");
+		if (!(dp = realpath(path, NULL)))
+			error("Unable to get absolute path of `%s'", path);
+		free(path);
+		dp[(d = strlen(dp))] = '/';
+		++d;
+	}
+
+	r = allocate(d + l + b + strlen(e) + 1);
+	strncat(r, dp, d);
+	strncat(r, "lib", l);
+	strncat(r, bp, b);
+	strcat(r, e);
+
+	if (dp != path) free(dp);
 
 	return r;
 }
 
 int modified(char *target, char *dep) {
+	char *e;
 	struct stat tstat, dstat;
+
+	if ((e = strrchr(dep, '.')) && strcmp(e, DYEXT) == 0) return 0;
 
 	if (stat(target, &tstat) == -1) {
 		if (errno == ENOENT) return !(errno = 0);
@@ -99,15 +112,14 @@ void compile(char *src, ...) {
 	pid_t cpid;
 
 	if (f = 0, cflags) while (cflags[f]) ++f;
-	p = args = alloc((5 + f + 1) * sizeof*args);
+	p = args = allocate((5 + f + 1) * sizeof*args);
 
 	*p++ = "cc";
-	if (cflags) for (f = 0; cflags[f]; *p++ = cflags[f++]);
 	*p++ = "-c";
+	if (cflags) for (f = 0; cflags[f]; *p++ = cflags[f++]);
 	*p++ = "-o";
 	*p++ = obj = extend(src, "!.o");
 	*p++ = hdr = src = extend(src, ".c");
-	*p = NULL;
 
 	va_start(hdrs, src);
 	do if (modified(obj, hdr = extend(hdr, ".h"))) {
@@ -133,7 +145,7 @@ void load(char type, char *target, char *obj, ...) {
 	for (o = 1; va_arg(count, char *); ++o);
 	va_end(count);
 	if (f = 0, lflags) while (lflags[f]) ++f;
-	args = alloc((3 + o + 1 + f + 1) * sizeof*args);
+	args = allocate((3 + o + 1 + f + 1) * sizeof*args);
 	fp = (a = (p = args) + 3) + o;
 
 	switch (type) {
@@ -161,7 +173,6 @@ void load(char type, char *target, char *obj, ...) {
 	do *p++ = extend(obj, ".o"); while ((obj = va_arg(objs, char *)));
 	va_end(objs);
 	if (lflags) for (f = 0; lflags[f]; *fp++ = lflags[f++]);
-	if (fp > p) *fp = NULL;
 	fp = p;
 
 	p -= o;
