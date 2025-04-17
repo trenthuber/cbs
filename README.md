@@ -92,9 +92,9 @@ The rest of the arguments are the names of the files you want to link together. 
 
 In a similar way as compiling, the predefined `lflags` variable can be used to define flags for the linker.
 
-The `DYEXT` macro has been defined which represents the platform-dependent file extension for dyanmic libraries, `".dylib"` for macOS and `".so"` for anything else. This can be used to allow portability of build files.
+The `DYEXT` macro has been defined which represents the platform-dependent file extension for dynamic libraries, `".dylib"` for macOS and `".so"` for anything else. This can be used to allow portability of build files.
 
-An example of linking `liba.dylib` (or `liba.so`), `b.o`, `libc.a`, and the system math library as a statically linked library `libmain.a`.
+An example of linking `liba.dylib` (or `liba.so`), `b.o`, `libc.a`, and the system math library into a statically linked library `libmain.a`.
 
 ```c
 lflags = (char *[]){"-lm", NULL};
@@ -107,9 +107,9 @@ load('s', "main", "a" DYEXT, "b", "c.a", NULL);
 void build(char *path);
 ```
 
-It is often adventagous to compartmentalize projects into a number of subdirectories both for organizational purposes and for rebuilding parts at a time without needing to rebuild the whole thing. The usual way this is done is by placing build scripts in any subdirectory you want to rebuild on its own. These scripts double as both being able to be ran by the programmer from the shell as well as being able to be run by the build system itself from some parent directory. The `build()` function performs the latter function of the build system.
+It is often advantageous to compartmentalize projects into a number of subdirectories both for organizational purposes and for rebuilding parts at a time without needing to rebuild the whole thing. The usual way this is done is by placing build scripts in any subdirectory you want to rebuild on its own. These scripts double as both being able to be ran by the programmer from the shell as well as being able to be run by the build system itself from some parent directory. The `build()` function performs the latter function of the build system.
 
-`build()` gets passed the name of the subdirectory you want to build, either as an absolute or relative path. Another philosophy taken by cbs is that **relative paths in a build file are always assumed to be with respect to the directory that that build file is in**. The directory you pass `build()` must have a `build.c` file in it which will be compiled and run (of course being recompiled and rerun if needed). If `path` is a null pointer, this has the effect of staying in the current directory and (again, if necessary) recompiling the build file and rerunning the build executable therein. In other words, in addition to orchestrating recursive builds, this function is also used to automate build executables rebuilding themselves and is thus why we generally include the `build(NULL);` statement at the start of build files.
+`build()` gets passed the name of the subdirectory you want to build, either as an absolute or relative path. Another philosophy taken by cbs is that **relative paths in a build file are always assumed to be with respect to the directory that that build file is in**. The directory you pass `build()` must have a `build.c` file in it which will be (re)compiled and (re)run. If `path` is a null pointer, this has the effect of staying in the current directory and (again, if necessary) recompiling the build file and rerunning the build executable therein. Putting `build(NULL);` at the start of build files is what allows a build executable to recompile itself in the event its corresponding build file gets changed. In essence, this function is what allows cbs to be truly automated.
 
 An example of building the contents of the directories `abc/src/` and `/usr/local/proj/src/`.
 

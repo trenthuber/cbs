@@ -48,8 +48,6 @@ char *extend(char *path, char *ext) {
 	d = bp - dp;
 	b = (e = strrchr(bp, '.')) ? e - bp : (e = ext, strlen(bp));
 	if (*ext == '!') e = ++ext;
-	l = strcmp(e, ".a") == 0 || strcmp(e, DYEXT) == 0 ? 3 : 0;
-
 	if (strcmp(e, DYEXT) == 0) {
 		path = d ? strndup(dp, d) : strdup(".");
 		if (!(dp = realpath(path, NULL)))
@@ -58,6 +56,7 @@ char *extend(char *path, char *ext) {
 		dp[(d = strlen(dp))] = '/';
 		++d;
 	}
+	l = strcmp(e, ".a") == 0 || strcmp(e, DYEXT) == 0 ? 3 : 0;
 
 	r = allocate(d + l + b + strlen(e) + 1);
 	strncat(r, dp, d);
