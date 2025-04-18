@@ -1,11 +1,11 @@
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/errno.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
+#include <sys/errno.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #ifdef __APPLE__
 #define DYEXT ".dylib"
@@ -28,6 +28,64 @@ void error(char *fmt, ...) {
 	dprintf(STDERR_FILENO, "\n");
 
 	exit(EXIT_FAILURE);
+}
+
+void await(pid_t cpid, char *what, char *who) {
+	int status;
+
+	if (cpid == -1) error("Unable to delegate the %s of `%s'", what, who);
+	if (waitpid(cpid, &status, 0) == -1)
+		error("Unable to await the %s of `%s'", what, who);
+	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
+		exit(EXIT_FAILURE);
+}
+
+int modified(char *target, char *dep) {
+	char *ext;
+	struct stat tstat, dstat;
+
+	if ((ext = strrchr(dep, '.')) && strcmp(ext, DYEXT) == 0) return 0;
+
+	if (stat(target, &tstat) == -1) {
+		if (errno == ENOENT) return !(errno = 0);
+		error("Unable to stat `%s'", target);
+	}
+	if (stat(dep, &dstat) == -1) error("Unable to stat `%s'", dep);
+
+	return tstat.st_mtime < dstat.st_mtime;
+}
+
+void run(char *path, char **args, char *what, char *who) {
+	size_t i;
+
+	for (i = 0; args[i]; ++i) printf("%s ", args[i]);
+	printf("\n");
+
+	if (execve(path, args, environ) == -1)
+		error("Unable to run %s of `%s'", what, who);
+}
+
+void build(char *path) {
+	pid_t cpid;
+
+	if (path) {
+		if ((cpid = fork())) {
+			await(cpid, "execution", "build");
+			printf("cd ..\n");
+			return;
+		}
+		printf("cd %s\n", path);
+		if (chdir(path)) error("Unable to set working directory to `%s'", path);
+	}
+
+	if (modified("build", "build.c")) {
+		if ((cpid = fork()) == 0)
+			run("/usr/bin/cc", (char *[]){"cc", "-o", "build", "build.c", NULL},
+			    "compilation", "build.c");
+		await(cpid, "compilation", "build.c");
+	} else if (!path) return;
+
+	run("build", (char *[]){"./build", NULL}, "execution", "build");
 }
 
 void *allocate(size_t s) {
@@ -67,41 +125,6 @@ char *extend(char *path, char *ext) {
 	if (dp != path) free(dp);
 
 	return r;
-}
-
-int modified(char *target, char *dep) {
-	char *e;
-	struct stat tstat, dstat;
-
-	if ((e = strrchr(dep, '.')) && strcmp(e, DYEXT) == 0) return 0;
-
-	if (stat(target, &tstat) == -1) {
-		if (errno == ENOENT) return !(errno = 0);
-		error("Unable to stat `%s'", target);
-	}
-	if (stat(dep, &dstat) == -1) error("Unable to stat `%s'", dep);
-
-	return tstat.st_mtime < dstat.st_mtime;
-}
-
-void run(char *path, char **args, char *what, char *who) {
-	size_t i;
-
-	for (i = 0; args[i]; ++i) printf("%s ", args[i]);
-	printf("\n");
-
-	if (execve(path, args, environ) == -1)
-		error("Unable to run %s of `%s'", what, who);
-}
-
-void await(pid_t cpid, char *what, char *who) {
-	int status;
-
-	if (cpid == -1) error("Unable to delegate the %s of `%s'", what, who);
-	if (waitpid(cpid, &status, 0) == -1)
-		error("Unable to await the %s of `%s'", what, who);
-	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
-		exit(EXIT_FAILURE);
 }
 
 void compile(char *src, ...) {
@@ -183,27 +206,4 @@ void load(char type, char *target, char *obj, ...) {
 
 	while (a < fp) free(*a++);
 	free(args);
-}
-
-void build(char *path) {
-	pid_t cpid;
-
-	if (path) {
-		if ((cpid = fork())) {
-			await(cpid, "execution", "build");
-			printf("cd ..\n");
-			return;
-		}
-		printf("cd %s\n", path);
-		if (chdir(path)) error("Unable to set working directory to `%s'", path);
-	}
-
-	if (modified("build", "build.c")) {
-		if ((cpid = fork()) == 0)
-			run("/usr/bin/cc", (char *[]){"cc", "-o", "build", "build.c", NULL},
-			    "compilation", "build.c");
-		await(cpid, "compilation", "build.c");
-	} else if (!path) return;
-
-	run("build", (char *[]){"./build", NULL}, "execution", "build");
 }
