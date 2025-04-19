@@ -1,11 +1,11 @@
 #include <stdarg.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <sys/errno.h>
 #include <stdlib.h>
-#include <sys/wait.h>
 #include <string.h>
+#include <sys/errno.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #ifdef __APPLE__
 #define DYEXT ".dylib"
