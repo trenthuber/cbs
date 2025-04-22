@@ -45,7 +45,7 @@ cc -o main main.o
 
 ## Detailed usage
 
-The advantage of making a library that only builds C projects is that it can be made dead simple. The build system itself just needs a way of executing build files recursively, and each build file just needs to compile and link C code. cbs uses three simple functions accordingly: `build()` for recursion, `compile()` for compiling, and `load()` for linking.
+The advantage of making a library that only builds C projects is that it can be made dead simple. The build system itself just needs a way of executing build files recursively, and each build file just needs to compile and link C code. Three simple functions have been defined accordingly: `build()` for recursion, `compile()` for compiling, and `load()` for linking.
 
 ### Recurring build files
 
@@ -53,9 +53,9 @@ The advantage of making a library that only builds C projects is that it can be 
 void build(char *path);
 ```
 
-It is often advantageous to compartmentalize projects into a number of subdirectories both for organizational purposes and for rebuilding parts at a time without needing to rebuild the whole thing. The usual way this is done is by placing build scripts in any subdirectory you want to rebuild on its own. These scripts are both able to be ran by the programmer from a shell as well as being able to be run by the build system itself from some parent directory. In cbs, it is the `build()` function that performs this function.
+It is often advantageous to compartmentalize projects into a number of subdirectories both for organizational purposes and for rebuilding parts at a time without needing to rebuild the whole thing. The usual way this is done is by placing build scripts in any subdirectory you want to rebuild on its own. These scripts can be run by the programmer from a shell or run by the build system itself from some other directory. The `build()` function is what performs the latter functionality.
 
-Build files must be named `build.c`, and the resulting build executable will always be named `build`. Each build file is in charge of building the contents of its resident directory. `build()` gets passed the name of the subdirectory you want to build, either as an absolute or relative path. It should be noted that **all relative paths in a build file are always assumed to be with respect to the directory that that build file is in**, not the root directory of the project. If `path` is a null pointer, this has the effect of staying in the current directory and thus (if the build file was modified) recompiling its own build file and rerunning itself. In essence, this function is what allows cbs to be truly automated.
+Build files must be named `build.c`, and the resulting build executable will always be named `build`. Each build file is in charge of building the contents of its resident directory. `build()` gets passed the name of the subdirectory you want to build, either as an absolute or relative path. It should be noted that **all relative paths in a build file are always assumed to be with respect to the directory that that build file is in**, not the root directory of the project. If `path` is a null pointer, this has the effect of staying in the current directory and thus (if the build file was modified) recompiling its own build file and rerunning itself. In essence, the `build()` function is what allows the system to be truly automated.
 
 An example of building the contents of the directories `abc/src/` and `/usr/local/proj/src/`.
 
@@ -70,7 +70,7 @@ build("/usr/local/proj/src/");
 void compile(char *src, ...);
 ```
 
-The `compile()` function is given a single source file to compile. It will only run if it finds the source file has been modified since the last time it compiled it. This is similar to the caching behavior in most other build systems. When cbs generates an object file, it will be of the same name as its source file and in the same directory. The philosophy cbs takes on file extensions is to only use them when using *non-typical* file extensions, as **typical file extensions are always implicit**. What counts as a "typical" file extension depends on the situation. In the case of compiling, source files have the typical extension `.c` and object files have `.o`. As it turns out dropping the typical file extensions has its advantages in writing concise code.[^1]
+The `compile()` function is given a single source file to compile. It will only run if it finds the source file has been modified since the last time it compiled it. This is similar to the caching behavior in most other build systems. When an object file is generated, it will have the same base name as its source file and be in the same directory. The philosophy one should take on file extensions is to only use them when using *non-typical* file extensions, as **typical file extensions are always implicit**. What counts as a "typical" file extension depends on the situation. In the case of compiling, source files have the typical extension `.c` and object files have `.o`. As it turns out dropping the typical file extensions has its advantages in writing concise code.[^1]
 
 [^1]: One example is putting a list of source file names without the `.c` extension in a C macro. We can use it to initialize an array that we iterate through, passing its elements as arguments to `compile()`, but we can also pass the entire macro as arguments to `load()` to link all the object files we just generated, ensuring we don't ever miss one.
 
@@ -105,7 +105,9 @@ The first argument to `load()`[^2] is the type of the target file. The types are
 
 The second argument is the file name of the target. There is no assumed typical file extension for the target as executables commonly lack them. It is also common to prepend `lib` to files that are static or dynamic libraries; this is done automatically by `load()` if necessary. The idea is to replicate the manner in which you would typically pass system libraries to the linker flag `-l`.
 
-The rest of the arguments are the names of the files you want to link together. The typical file extension for these files is `.o` since we generally link object files. The only other files that would use a different file extension would be statically linked libraries or dynamically linked libraries (the linker flag `-l` should be used to link system libraries as opposed to project libraries). The `DYEXT` macro has been defined which represents the platform-dependent file extension for dynamic libraries: `".dylib"` for macOS and `".so"` for anything else. This helps ease the portability of build files.
+The rest of the arguments are the names of the files you want to link together. The typical file extension for these files is `.o` since we generally link object files. The only other files that would use a different file extension would be statically linked libraries or dynamically linked libraries[^3] (the linker flag `-l` should be used to link system libraries as opposed to project libraries). The `DYEXT` macro has been defined which represents the platform-dependent file extension for dynamic libraries: `".dylib"` for macOS and `".so"` for anything else. This helps ease the portability of build files.
+
+[^3]: The `-fPIC` flag is not included by default in `cflags`, so make sure to do so manually when you're compiling the object files that will be used to create a dynamic library.
 
 As is the case with `compile()`, **the arguments passed to `load()` must be terminated with a null pointer**.
 
