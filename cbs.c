@@ -1,3 +1,4 @@
+#include <err.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,25 +18,11 @@ extern char **environ;
 
 char **cflags, **lflags;
 
-void error(char *fmt, ...) {
-	va_list args;
-
-	dprintf(STDERR_FILENO, "cbs: ");
-	va_start(args, fmt);
-	vdprintf(STDERR_FILENO, fmt, args);
-	va_end(args);
-	if (errno) dprintf(STDERR_FILENO, ": %s", strerror(errno));
-	dprintf(STDERR_FILENO, "\n");
-
-	exit(EXIT_FAILURE);
-}
-
 void await(pid_t cpid, char *what, char *who) {
 	int status;
 
-	if (cpid == -1) error("Unable to delegate the %s of `%s'", what, who);
-	if (waitpid(cpid, &status, 0) == -1)
-		error("Unable to await the %s of `%s'", what, who);
+	if (cpid == -1 || waitpid(cpid, &status, 0) == -1)
+		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
 	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
 		exit(EXIT_FAILURE);
 }
@@ -47,10 +34,10 @@ int modified(char *target, char *dep) {
 	if ((ext = strrchr(dep, '.')) && strcmp(ext, DYEXT) == 0) return 0;
 
 	if (stat(target, &tstat) == -1) {
-		if (errno == ENOENT) return !(errno = 0);
-		error("Unable to stat `%s'", target);
+		if (errno == ENOENT) return 1;
+		err(EXIT_FAILURE, "Unable to stat `%s'", target);
 	}
-	if (stat(dep, &dstat) == -1) error("Unable to stat `%s'", dep);
+	if (stat(dep, &dstat) == -1) err(EXIT_FAILURE, "Unable to stat `%s'", dep);
 
 	return tstat.st_mtime < dstat.st_mtime;
 }
@@ -62,7 +49,7 @@ void run(char *path, char **args, char *what, char *who) {
 	printf("\n");
 
 	if (execve(path, args, environ) == -1)
-		error("Unable to run %s of `%s'", what, who);
+		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
 }
 
 void build(char *path) {
@@ -70,28 +57,29 @@ void build(char *path) {
 
 	if (path) {
 		if ((cpid = fork())) {
-			await(cpid, "execution", "build");
+			await(cpid, "run", "build");
 			printf("cd ..\n");
 			return;
 		}
 		printf("cd %s\n", path);
-		if (chdir(path)) error("Unable to set working directory to `%s'", path);
+		if (chdir(path))
+			err(EXIT_FAILURE, "Unable to set working directory to `%s'", path);
 	}
 
 	if (modified("build", "build.c")) {
 		if ((cpid = fork()) == 0)
 			run("/usr/bin/cc", (char *[]){"cc", "-o", "build", "build.c", NULL},
-			    "compilation", "build.c");
-		await(cpid, "compilation", "build.c");
+			    "compile", "build.c");
+		await(cpid, "compile", "build.c");
 	} else if (!path) return;
 
-	run("build", (char *[]){"./build", NULL}, "execution", "build");
+	run("build", (char *[]){"./build", NULL}, "run", "build");
 }
 
 void *allocate(size_t s) {
 	void *r;
 
-	if (!(r = malloc(s))) error("Memory allocation");
+	if (!(r = malloc(s))) err(EXIT_FAILURE, "Memory allocation");
 
 	return memset(r, 0, s);
 }
@@ -109,7 +97,7 @@ char *extend(char *path, char *ext) {
 	if (strcmp(e, DYEXT) == 0) {
 		path = d ? strndup(dp, d) : strdup(".");
 		if (!(dp = realpath(path, NULL)))
-			error("Unable to get absolute path of `%s'", path);
+			err(EXIT_FAILURE, "Unable to get the absolute path of `%s'", path);
 		free(path);
 		dp[(d = strlen(dp))] = '/';
 		++d;
@@ -145,8 +133,8 @@ void compile(char *src, ...) {
 
 	va_start(hdrs, src);
 	do if (modified(obj, hdr = extend(hdr, ".h"))) {
-		if ((cpid = fork()) == 0) run("/usr/bin/cc", args, "compilation", src);
-		await(cpid, "compilation", src);
+		if ((cpid = fork()) == 0) run("/usr/bin/cc", args, "compile", src);
+		await(cpid, "compile", src);
 		break;
 	} while (free(hdr), hdr = va_arg(hdrs, char *));
 	va_end(hdrs);
@@ -189,7 +177,7 @@ void load(char type, char *target, char *obj, ...) {
 		a = p += f;
 		break;
 	default:
-		error("Unknown target type `%c'", type);
+		errx(EXIT_FAILURE, "Unknown target type `%c'", type);
 	}
 	*p++ = target;
 	do *p++ = extend(obj, ".o"); while ((obj = va_arg(objs, char *)));
@@ -199,8 +187,8 @@ void load(char type, char *target, char *obj, ...) {
 
 	p -= o;
 	while (o--) if (modified(target, *p++)) {
-		if ((cpid = fork()) == 0) run(path, args, "linking", target);
-		await(cpid, "linking", target);
+		if ((cpid = fork()) == 0) run(path, args, "link", target);
+		await(cpid, "link", target);
 		break;
 	}
 
