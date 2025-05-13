@@ -46,7 +46,7 @@ void run(char *path, char **args, char *what, char *who) {
 	size_t i;
 
 	for (i = 0; args[i]; ++i) printf("%s ", args[i]);
-	printf("\n");
+	putchar('\n');
 
 	if (execve(path, args, environ) == -1)
 		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
@@ -58,7 +58,7 @@ void build(char *path) {
 	if (path) {
 		if ((cpid = fork())) {
 			await(cpid, "run", "build");
-			printf("cd ..\n");
+			puts("cd ..");
 			return;
 		}
 		printf("cd %s\n", path);
