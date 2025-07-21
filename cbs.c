@@ -158,7 +158,7 @@ void build(char *path) {
 
 	if (stat("build.c", &src) == -1)
 		err(EXIT_FAILURE, "Unable to stat `build.c'");
-	if (stat("build.o", &obj) == -1 && src.st_mtime > obj.st_mtime) {
+	if (stat("build.o", &obj) == -1 || src.st_mtime > obj.st_mtime) {
 		compile("build");
 		load('x', "build", (char *[]){"build", NULL});
 	} else if (!path) return;
