@@ -4,7 +4,7 @@ cbs is an extremely lightweight build tool designed specifically for C projects.
 
 ## Overview
 
-To build your project, we first need to make a file called `build.c` which describes what to build.
+To build a project, you first need to make a file called `build.c` which describes what to build.
 
 ```c
 // build.c
@@ -22,7 +22,7 @@ int main(void) {
 }
 ```
 
-Next, we need to compile the build file and run the resulting executable, called `build`.
+Next, compile the build file and run the resulting executable, called `build`.
 
 ```console
 > cc -o build build.c
