@@ -1,12 +1,10 @@
 # cbs
 
-Many modern programming languages integrate some form of a build system into their own runtimes, allowing developers to use the same language to write their applications and to build them. This library hopes to bring that functionality to the C language.
-
-cbs is a build system for C projects and is itself written in C.
+cbs is an extremely lightweight build tool designed specifically for C projects. 
 
 ## Overview
 
-Build files are always named `build.c`. Here is a minimal example of the contents of such a file.
+To build your project, we first need to make a file called `build.c` which describes what to build.
 
 ```c
 // build.c
@@ -24,7 +22,7 @@ int main(void) {
 }
 ```
 
-To build your project, you first need to manually compile your build file and run the resulting executable, called `build`.
+Next, we need to compile the build file and run the resulting executable, called `build`.
 
 ```console
 > cc -o build build.c
@@ -35,7 +33,7 @@ cc -o main main.o
 Hello, world!
 ```
 
-Every subsequent time you run `build`, it will rebuild everything, including itself.
+Every subsequent time you run `build`, it will rebuild the entire project, including itself.
 
 ```console
 > build
