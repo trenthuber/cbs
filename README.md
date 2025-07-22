@@ -14,48 +14,39 @@ Build files are always named `build.c`. Here is a minimal example of the content
 #include "cbs.c"
 
 int main(void) {
-    build(NULL);
+    build("./");
 
     compile("main");
-    load('x', "main", (char *[]){"main", NULL});
 
-    return 0;
+    load('x', "main", LIST("main"));
+
+    return EXIT_SUCCESS;
 }
 ```
 
 To build your project, you first need to manually compile your build file and run the resulting executable, called `build`.
 
 ```console
-$ cc -o build build.c
-$ ./build
-cc -c -o build.o build.c
-cc -o build build.o
-build
+> cc -o build build.c
+> build
 cc -c -o main.o main.c
 cc -o main main.o
-$ ./main
+> main
 Hello, world!
 ```
 
-The inclusion of the `build(NULL);` statement at the top of the build file will cause the build executable to *recompile its own source code* anytime that source code gets modified. This means **you only need to manually compile `build.c` once, even if you later modify it**.
+Every subsequent time you run `build`, it will rebuild everything, including itself.
 
 ```console
-$ ./build
-cc -c -o main.o main.c
-cc -o main main.o
-$ touch build.c
-$ ./build
-cc -c -o build.o build.c
+> build
+cc -c -o build.o build.c                                                                                                                            
 cc -o build build.o
-build
 cc -c -o main.o main.c
 cc -o main main.o
 ```
 
-Note too that cbs rebuilt `main.c` even though it wasn't modified. This is because **cbs is not an incremental build system**. The bugs these kinds of systems produce can often waste more time for the programmer than they would otherwise save. Besides, cbs is intended for smaller projects where incremental builds really wouldn't save that much time anyway.
-
 ## Detailed usage
-The advantage of cbs is its simplicity, which in turn comes from its intentionally limited scope of building C projects. cbs just needs a way of compiling and linking C code and perhaps a way of recursing into project subdirectories where the build process can be repeated.
+cbs tries to be as simple as possible, while still remaining powerful. Its simplicity is rooted in its intentionally limited scope to just build C projects. Thus, cbs just needs to worry about compiling and linking C code, and calling other build executables.
 
 ### Compiling source files
 
@@ -63,19 +54,17 @@ The advantage of cbs is its simplicity, which in turn comes from its intentional
 void compile(char *src);
 ```
 
-The `compile()` function is given a single source file to compile. The object file it generates will have the same base name and will be in the same directory as the source file. In general, file extensions are unnecessary for cbs as they can usually be inferred based on the function being called. This has the added benefit that often data structures containing build file names can be reused for compilation and linking steps.
+The `compile()` function is given a single source file to compile and will generate an object file with the same name. In general, file extensions are unnecessary in your build files as they can usually be inferred based on the function being called. This has the added benefit of being able to reuse lists of file names in both compiling and linking.
 
-To pass flags to the compiler, the predefined `cflags` variable is set equal to a NULL-terminated array of C strings, each string being a compiler flag. Until reinitialized, the same flags will be used in all subsequent `compile()` calls. Setting `cflags` to NULL will prevent any flags from being used, which is its default value.
-
-An example of using `cflags`:
+To define flags for the compiler to use, you can set the global `cflags` variable to a list of strings of flags. This list is expected to be NULL-terminated, an easy thing to forget, so a simple C macro has been defined to avoid the issue altogether.
 
 ```c
-cflags = (char *[]){"-Wall", "-O3", NULL};
+cflags = LIST("-Wall", "-O3");
 compile("main");
 ```
 
 > [!NOTE]
-> It is not guaranteed that the object code cbs produces will be position-independent. When compiling source files that will be used in a dynamic library, you will need to include the `-fPIC` flag in `cflags` to ensure compatibility between platforms.
+> It is not guaranteed that the object code cbs produces will be position-independent. When compiling source files that will be used in a dynamic library, you will need to include the `-fPIC` flag in your compiler flags to ensure compatibility between platforms.
 
 ### Linking object files
 
@@ -83,39 +72,39 @@ compile("main");
 void load(char type, char *target, char **objs);
 ```
 
-The first argument to `load()` is the type of the target file. The types are as follows.
+The first argument tells `load()` the type of target file to generate.
 
 ```
 'x' - executable
-'s' - statically linked library
-'d' - dynamically linked library
+'s' - static library
+'d' - dynamic library
 ```
 
-The second argument is the file name of the target. A file extension is optional as it'll be automatically appended if it's not present based on the target type. It is also common to prepend `lib` to libraries; this is done automatically as well in the case it's not present. This behavior is intended to replicate how you would typically specify system libraries to the linker flag `-l`.
+The second argument is the target file's name. To aid portability, the file extension is optional, as it can be inferred from the target file type. It is also common to prepend `lib` to libraries; this is similarly optional.
 
-The third and final argument is a NULL-terminated array of C strings, each string being the name of an object file or library to link together to create the target. File extensions for libraries are required here, as otherwise the system will assume it's the name of an object file.
+The third and final argument is a list of object files and libraries that will be linked to create the target file. Here, file extensions are required for libraries since they're mixed in with object files. The `LIST()` macro can also be used for this list since it too is expected to be NULL-terminated.
 
-The `lflags` variable works exactly like the `cflags` variable but with respect to the linker. An example using `lflags`:
+Similar to the global `cflags` variable, there is a global `lflags` variable used by the linker.
 
 ```c
-lflags = (char *[]){"-lm", NULL};
-load('s', "main", (char *[]){"a" DYEXT, "b", "c.a", NULL});
+lflags = LIST("-lm");
+load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 ```
-The `DYEXT` macro is defined with the platform specific file extension for dynamic libraries to aid portability of build files.
 
-### Building subdirectories
+`DYEXT` is another macro defined as the platform-specific file extension for dynamic libraries, this time to aid the portability of build files.
+
+### Recursive builds
 
 ```c
 void build(char *path);
 ```
 
-It is often advantageous to compartmentalize projects into a number of subdirectories both for organizational purposes and for rebuilding parts at a time without needing to rebuild the entire project. The usual way this is done is by placing build scripts in any subdirectory you want to be able to rebuild on its own. These scripts can be run by the programmer from a shell *or* run by the build system itself from a higher-up directory. The latter functionality is performed by `build()`.
+The `build()` function allows one build file to run another build file. The name of the directory that contains the build file being run is passed to the function either as a relative path or an absolute path. You can think of this function as changing to that directory and running the build executable located therein. `build()` will only recompile a build executable it if it can't find the build executable in that directory.
 
-Every subdirectory you want to build should have its own build file in it which is responsible for producing the final product of that subdirectory. `build()` gets passed a C string which contains the name of the subdirectory to build, either as an absolute or relative path. It should be noted that **all relative paths in a build file are with respect to the directory that that build file itself is in**, not the root directory of the project. If `path` is NULL, this has the effect of staying in the current directory and thus recompiling its own build file and rerunning itself if the build file was modified since the last time it was compiled.
-
-An example using `build()`:
+If the current directory is passed to `build()`, then it will *recompile its own build file* before rerunning *itself*. Thus, including a statement like `build("./");` at the beginning of your build file means you don't have to manually recompile that build file every time you modify it.
 
 ```c
-build("abc/src/");
-build("/usr/local/proj/src/");
+build("./");
+build("../../src/");
+build("/usr/local/project/src/");
 ```

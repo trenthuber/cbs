@@ -1,8 +1,10 @@
 #include <err.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -11,6 +13,8 @@
 #else
 #define DYEXT ".so"
 #endif
+
+#define LIST(...) (char *[]){__VA_ARGS__, NULL}
 
 extern char **environ;
 
@@ -59,8 +63,10 @@ char *extend(char *path, char *ext) {
 void run(char *file, char **args, char *what, char *who) {
 	size_t i;
 
-	for (i = 0; args[i]; ++i) printf("%s ", args[i]);
-	putchar('\n');
+	if (*args) for (i = 0; args[i]; ++i) {
+		fputs(args[i], stdout);
+		putchar(args[i + 1] ? ' ' : '\n');
+	} else ++args;
 
 	if (execve(file, args, environ) == -1)
 		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
@@ -91,7 +97,8 @@ void compile(char *src) {
 	*p++ = extend(src, "!.o");
 	*p++ = src = extend(src, ".c");
 
-	if ((cpid = fork()) == 0) run("/usr/bin/cc", args, "compile", src);
+	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
+	else if (!cpid) run("/usr/bin/cc", args, "compile", src);
 	await(cpid, "compile", src);
 
 	free(src);
@@ -104,7 +111,7 @@ void load(char type, char *target, char **objs) {
 	pid_t cpid;
 
 	f = o = 0;
-	if (objs) while (objs[o]) ++o;
+	while (objs[o]) ++o;
 	if (lflags) while (lflags[f]) ++f;
 	args = allocate((3 + o + 1 + f + 1) * sizeof*args);
 	fp = (a = (p = args) + 3) + o;
@@ -131,37 +138,72 @@ void load(char type, char *target, char **objs) {
 	}
 	*p++ = target;
 	f = o = 0;
-	if (objs) while (objs[o]) *p++ = extend(objs[o++], ".o");
+	while (objs[o]) *p++ = extend(objs[o++], ".o");
 	if (lflags) while (lflags[f]) *fp++ = lflags[f++];
 
-	if ((cpid = fork()) == 0) run(path, args, "link", target);
+	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
+	else if (!cpid) run(path, args, "link", target);
 	await(cpid, "link", target);
 
 	while (a < p) free(*a++);
 	free(args);
 }
 
-void build(char *path) {
-	pid_t cpid;
-	struct stat src, obj;
+int after(struct stat astat, struct stat bstat) {
+	struct timespec a, b;
 
-	if (path) {
-		if ((cpid = fork())) {
-			await(cpid, "run", "build");
-			puts("cd ..");
-			return;
-		}
-		printf("cd %s\n", path);
-		if (chdir(path))
+	a = astat.st_mtimespec;
+	b = bstat.st_mtimespec;
+
+	return a.tv_sec == b.tv_sec ? a.tv_nsec > b.tv_nsec : a.tv_sec > b.tv_sec;
+}
+
+void build(char *path) {
+	char *absolute, *current, **c, **l;
+	struct stat exe, src;
+	int exists, self, leave;
+	pid_t cpid;
+
+	if (!(absolute = realpath(path, NULL)))
+		err(EXIT_FAILURE, "Unable to resolve `%s'", path);
+	if (!(current = getcwd(NULL, 0)))
+		err(EXIT_FAILURE, "Unable to check current directory");
+
+	exists = stat("build", &exe) != -1;
+	if ((self = strcmp(absolute, current) == 0)) {
+		if (stat("build.c", &src) == -1)
+			err(EXIT_FAILURE, "Unable to stat `build.c'");
+		if ((leave = exists && after(exe, src))
+		    && utimensat(AT_FDCWD, "build.c", NULL, 0) == -1)
+			err(EXIT_FAILURE, "Unable to update `build.c' modification time");
+	} else {
+		if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
+		else if (cpid) await(cpid, "run", "build");
+
+		path = cpid ? current : absolute;
+		printf("cd %s/\n", path);
+		if (chdir(path) == -1)
 			err(EXIT_FAILURE, "Unable to change directory to `%s'", path);
+
+		leave = cpid;
 	}
 
-	if (stat("build.c", &src) == -1)
-		err(EXIT_FAILURE, "Unable to stat `build.c'");
-	if (stat("build.o", &obj) == -1 || src.st_mtime > obj.st_mtime) {
-		compile("build");
-		load('x', "build", (char *[]){"build", NULL});
-	} else if (!path) return;
+	free(current);
+	free(absolute);
 
-	run("build", (char *[]){"build", NULL}, "run", "build");
+	if (leave) return;
+
+	if (self || !exists) {
+		c = cflags;
+		l = lflags;
+		lflags = cflags = NULL;
+
+		compile("build");
+		load('x', "build", LIST("build"));
+
+		cflags = c;
+		lflags = l;
+	}
+
+	run("build", LIST(NULL, "build"), "run", "build");
 }
