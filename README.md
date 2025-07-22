@@ -62,7 +62,7 @@ compile("main");
 ```
 
 > [!NOTE]
-> It is not guaranteed that the object code cbs produces will be position-independent. When compiling source files that will be used in a dynamic library, you will need to include the `-fPIC` flag in your compiler flags to ensure compatibility between platforms.
+> It is not guaranteed that the object code cbs produces will be position-independent. When compiling source files that will be used in a dynamic library, you will need to include `-fPIC` in your compiler flags to ensure compatibility between platforms.
 
 ### Linking object files
 
@@ -78,9 +78,9 @@ The first argument tells `load()` the type of target file to generate.
 'd' - dynamic library
 ```
 
-The second argument is the target file's name. To aid portability, the file extension is optional, as it can be inferred from the target file type. It is also common to prepend `lib` to libraries; this is similarly optional.
+The second argument is the name of the target file. To aid portability, the file extension is optional, as it can be inferred from the target file type. It is also common to prepend `lib` to libraries; this is similarly optional.
 
-The third and final argument is a list of object files and libraries that will be linked to create the target file. Here, file extensions are required for libraries since they're mixed in with object files. The `LIST()` macro can also be used for this list since it too is expected to be NULL-terminated.
+The third and final argument is a list of object files and libraries that will be linked to create the target file. Here, file extensions *are* required for libraries since they're mixed in with object files. The `LIST()` macro can also be used for this list since it too is expected to be NULL-terminated.
 
 Similar to the global `cflags` variable, there is a global `lflags` variable used by the linker.
 
@@ -97,7 +97,7 @@ load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 void build(char *path);
 ```
 
-The `build()` function allows one build file to run another build file. The name of the directory that contains the build file being run is passed to the function either as a relative path or an absolute path. You can think of this function as changing to that directory and running the build executable located therein. `build()` will only recompile a build executable it if it can't find the build executable in that directory.
+The `build()` function allows one build executable to run another build executable. The name of the directory that contains the build executable being run is passed to the function by a relative or absolute path. You can think of this function as changing to that directory and running the build executable located therein. `build()` will only recompile the build file it if it can't find the build executable in that directory.
 
 If the current directory is passed to `build()`, then it will *recompile its own build file* before rerunning *itself*. Thus, including a statement like `build("./");` at the beginning of your build file means you don't have to manually recompile that build file every time you modify it.
 
