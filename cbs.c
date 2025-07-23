@@ -10,8 +10,10 @@
 
 #ifdef __APPLE__
 #define DYEXT ".dylib"
+#define TIME st_mtimespec
 #else
 #define DYEXT ".so"
+#define TIME st_mtim
 #endif
 
 #define NONE (char *[]){NULL}
@@ -150,8 +152,8 @@ void load(char type, char *target, char **objs) {
 int after(struct stat astat, struct stat bstat) {
 	struct timespec a, b;
 
-	a = astat.st_mtimespec;
-	b = bstat.st_mtimespec;
+	a = astat.TIME;
+	b = bstat.TIME;
 
 	return a.tv_sec == b.tv_sec ? a.tv_nsec > b.tv_nsec : a.tv_sec > b.tv_sec;
 }
@@ -167,11 +169,10 @@ void build(char *path) {
 	if (!(current = getcwd(NULL, 0)))
 		err(EXIT_FAILURE, "Unable to check current directory");
 
-	exists = stat("build", &exe) != -1;
 	if ((self = strcmp(absolute, current) == 0)) {
 		if (stat("build.c", &src) == -1)
 			err(EXIT_FAILURE, "Unable to stat `build.c'");
-		if ((leave = exists && after(exe, src))
+		if ((leave = (exists = stat("build", &exe) == 0) && after(exe, src))
 		    && utimensat(AT_FDCWD, "build.c", NULL, 0) == -1)
 			err(EXIT_FAILURE, "Unable to update `build.c' modification time");
 	} else {
@@ -183,6 +184,7 @@ void build(char *path) {
 		if (chdir(path) == -1)
 			err(EXIT_FAILURE, "Unable to change directory to `%s'", path);
 
+		exists = stat("build", &exe) == 0;
 		leave = cpid;
 	}
 
