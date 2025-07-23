@@ -14,8 +14,10 @@ To build a project, you first need to make a file called `build.c` which describ
 int main(void) {
     build("./");
 
+    cflags = NONE;
     compile("main");
 
+    lflags = NONE;
     load('x', "main", LIST("main"));
 
     return EXIT_SUCCESS;
@@ -44,7 +46,7 @@ cc -o main main.o
 ```
 
 ## Detailed usage
-cbs tries to be as simple as possible, while still remaining powerful. Its simplicity is rooted in its intentionally limited scope to just build C projects. Thus, cbs just needs to worry about compiling and linking C code, and calling other build executables.
+cbs tries to be as simple as possible, while still remaining powerful. Its simplicity is rooted in its intentionally limited scope of only building C projects. Thus, cbs only needs to compile and link C code, as well as call other build executables.
 
 ### Compiling source files
 
@@ -54,7 +56,7 @@ void compile(char *src);
 
 The `compile()` function is given a single source file to compile and will generate an object file with the same name. In general, file extensions are unnecessary in your build files as they can usually be inferred based on the function being called. This has the added benefit of being able to reuse lists of file names in both compiling and linking.
 
-To define flags for the compiler to use, you can set the global `cflags` variable to a list of strings of flags. This list is expected to be NULL-terminated, an easy thing to forget, so a simple C macro has been defined to avoid the issue altogether.
+Before you run `compile()`, the global `cflags` variable has to be initialized with a list of flags to pass to the compiler. If no flags are needed, than the `NONE` macro should be used; otherwise the `LIST()` macro can be used.
 
 ```c
 cflags = LIST("-Wall", "-O3");
@@ -82,14 +84,14 @@ The second argument is the name of the target file. To aid portability, the file
 
 The third and final argument is a list of object files and libraries that will be linked to create the target file. Here, file extensions *are* required for libraries since they're mixed in with object files. The `LIST()` macro can also be used for this list since it too is expected to be NULL-terminated.
 
-Similar to the global `cflags` variable, there is a global `lflags` variable used by the linker.
+Similar to `cflags`, there is a global `lflags` variable used by the linker.
 
 ```c
 lflags = LIST("-lm");
 load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 ```
 
-`DYEXT` is another macro defined as the platform-specific file extension for dynamic libraries, this time to aid the portability of build files.
+`DYEXT` is macro defined to be the platform-specific file extension for dynamic libraries, to aid the portability of build files.
 
 ### Recursive builds
 

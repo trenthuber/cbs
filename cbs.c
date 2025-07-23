@@ -14,6 +14,7 @@
 #define DYEXT ".so"
 #endif
 
+#define NONE (char *[]){NULL}
 #define LIST(...) (char *[]){__VA_ARGS__, NULL}
 
 extern char **environ;
@@ -32,9 +33,7 @@ char *extend(char *path, char *ext) {
 	char *dp, *bp, *e, *r;
 	size_t d, b, l;
 
-	if (!(dp = path)) return NULL;
-
-	bp = (bp = strrchr(dp, '/')) ? bp + 1 : dp;
+	bp = (bp = strrchr(dp = path, '/')) ? bp + 1 : dp;
 	d = bp - dp;
 	b = (e = strrchr(bp, '.')) ? e - bp : (e = ext, strlen(bp));
 	if (*ext == '!') e = ++ext;
@@ -63,10 +62,11 @@ char *extend(char *path, char *ext) {
 void run(char *file, char **args, char *what, char *who) {
 	size_t i;
 
-	if (*args) for (i = 0; args[i]; ++i) {
+	if (*file == '!') ++file;
+	else for (i = 0; args[i]; ++i) {
 		fputs(args[i], stdout);
 		putchar(args[i + 1] ? ' ' : '\n');
-	} else ++args;
+	}
 
 	if (execve(file, args, environ) == -1)
 		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
@@ -83,24 +83,24 @@ void await(pid_t cpid, char *what, char *who) {
 
 void compile(char *src) {
 	size_t f;
-	char **args, **p;
+	char **args, **p, *obj;
 	pid_t cpid;
 
-	f = 0;
-	if (cflags) while (cflags[f]) ++f;
+	for (f = 0; cflags[f]; ++f);
 	p = args = allocate((2 + f + 3 + 1) * sizeof*args);
 
 	*p++ = "cc";
 	*p++ = "-c";
-	if (cflags) for (f = 0; cflags[f]; *p++ = cflags[f++]);
+	for (f = 0; cflags[f]; *p++ = cflags[f++]);
 	*p++ = "-o";
-	*p++ = extend(src, "!.o");
+	*p++ = obj = extend(src, "!.o");
 	*p++ = src = extend(src, ".c");
 
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
 	else if (!cpid) run("/usr/bin/cc", args, "compile", src);
 	await(cpid, "compile", src);
 
+	free(obj);
 	free(src);
 	free(args);
 }
@@ -110,9 +110,8 @@ void load(char type, char *target, char **objs) {
 	char **args, **p, **a, **fp, *path;
 	pid_t cpid;
 
-	f = o = 0;
-	while (objs[o]) ++o;
-	if (lflags) while (lflags[f]) ++f;
+	for (o = 0; objs[o]; ++o);
+	for (f = 0; lflags[f]; ++f);
 	args = allocate((3 + o + 1 + f + 1) * sizeof*args);
 	fp = (a = (p = args) + 3) + o;
 
@@ -137,9 +136,8 @@ void load(char type, char *target, char **objs) {
 		errx(EXIT_FAILURE, "Unknown target type `%c'", type);
 	}
 	*p++ = target;
-	f = o = 0;
-	while (objs[o]) *p++ = extend(objs[o++], ".o");
-	if (lflags) while (lflags[f]) *fp++ = lflags[f++];
+	for (o = 0; objs[o]; *p++ = extend(objs[o++], ".o"));
+	for (f = 0; lflags[f]; *fp++ = lflags[f++]);
 
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
 	else if (!cpid) run(path, args, "link", target);
@@ -196,14 +194,16 @@ void build(char *path) {
 	if (self || !exists) {
 		c = cflags;
 		l = lflags;
-		lflags = cflags = NULL;
 
+		cflags = NONE;
 		compile("build");
+
+		lflags = NONE;
 		load('x', "build", LIST("build"));
 
 		cflags = c;
 		lflags = l;
 	}
 
-	run("build", LIST(NULL, "build"), "run", "build");
+	run("!build", LIST("build"), "run", "build");
 }
