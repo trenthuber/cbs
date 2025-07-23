@@ -1,6 +1,6 @@
 # cbs
 
-cbs is an extremely lightweight build tool designed specifically for C projects. 
+cbs is an extremely lightweight build system designed specifically for C projects. 
 
 ## Overview
 
