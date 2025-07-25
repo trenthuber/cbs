@@ -32,21 +32,20 @@ void *allocate(size_t s) {
 }
 
 char *extend(char *path, char *ext) {
-	char *dp, *bp, *e, *r;
-	size_t d, b, l;
+	char *bp, *e, *dp, *r;
+	size_t b, d, l;
 
-	bp = (bp = strrchr(dp = path, '/')) ? bp + 1 : dp;
-	d = bp - dp;
+	bp = (bp = strrchr(path, '/')) ? bp + 1 : path;
 	b = (e = strrchr(bp, '.')) ? e - bp : (e = ext, strlen(bp));
-	if (*ext == '!') e = ++ext;
+	if (*ext == '!') e = ext + 1;
+	d = bp - path;
 	if (strcmp(e, DYEXT) == 0) {
-		path = d ? strndup(dp, d) : strdup(".");
-		if (!(dp = realpath(path, NULL)))
+		if (!(dp = realpath(path = d ? strndup(path, d) : strdup("./"), NULL)))
 			err(EXIT_FAILURE, "Unable to get the absolute path of `%s'", path);
 		free(path);
 		d = strlen(dp);
 		dp[d++] = '/';
-	}
+	} else dp = strdup(path);
 	l = (strcmp(e, ".a") == 0 || strcmp(e, DYEXT) == 0)
 	    && (b <= 3 || strncmp(bp, "lib", 3) != 0) ? 3 : 0;
 
@@ -56,7 +55,7 @@ char *extend(char *path, char *ext) {
 	strncat(r, bp, b);
 	strcat(r, e);
 
-	if (dp != path) free(dp);
+	free(dp);
 
 	return r;
 }
@@ -64,11 +63,10 @@ char *extend(char *path, char *ext) {
 void run(char *file, char **args, char *what, char *who) {
 	size_t i;
 
-	if (*file == '!') ++file;
-	else for (i = 0; args[i]; ++i) {
+	if (*file != '!') for (i = 0; args[i]; ++i) {
 		fputs(args[i], stdout);
 		putchar(args[i + 1] ? ' ' : '\n');
-	}
+	} else ++file;
 
 	if (execve(file, args, environ) == -1)
 		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
@@ -79,7 +77,8 @@ void await(pid_t cpid, char *what, char *who) {
 
 	if (cpid == -1 || waitpid(cpid, &status, 0) == -1)
 		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
-	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
+	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS
+	    || WIFSIGNALED(status))
 		exit(EXIT_FAILURE);
 }
 
@@ -192,7 +191,6 @@ void build(char *path) {
 	free(absolute);
 
 	if (leave) return;
-
 	if (self || !exists) {
 		c = cflags;
 		l = lflags;

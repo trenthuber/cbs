@@ -35,7 +35,7 @@ cc -o main main.o
 Hello, world!
 ```
 
-Every subsequent time you run `build`, it will rebuild the entire project, including itself.
+Every subsequent time you run `build`, it will rebuild the entire project, as well as itself.
 
 ```console
 > build
@@ -54,9 +54,9 @@ cbs tries to be as simple as possible, while still remaining powerful. Its simpl
 void compile(char *src);
 ```
 
-The `compile()` function is given a single source file to compile and will generate an object file with the same name. In general, file extensions are unnecessary in your build files as they can usually be inferred based on the function being called. This has the added benefit of being able to reuse lists of file names in both compiling and linking.
+The `compile()` function is given a single source file to compile and will generate an object file with the same name. In general, file extensions in your build files are optional as they can usually be inferred based on the function being called. This has the added benefit of being able to reuse lists of file names for compiling and linking.
 
-Before you run `compile()`, the global `cflags` variable has to be initialized with a list of flags to pass to the compiler. If no flags are needed, than the `NONE` macro should be used; otherwise the `LIST()` macro can be used.
+Before you run `compile()`, the global `cflags` variable has to be initialized with a list of flags to pass to the compiler. If no flags are needed, than the `NONE` macro should be used; otherwise the `LIST()` macro can be used. The value of `cflags` doesn't change between calls to `compile()`, so the same flags can be used for multiple compilations without having to reinitialize.
 
 ```c
 cflags = LIST("-Wall", "-O3");
@@ -80,18 +80,18 @@ The first argument tells `load()` the type of target file to generate.
 'd' - dynamic library
 ```
 
-The second argument is the name of the target file. To aid portability, the file extension is optional, as it can be inferred from the target file type. It is also common to prepend `lib` to libraries; this is similarly optional.
+The second argument is the name of the target file. For similar reasons to `compile()`, file extensions are optional for the target. Prepending `lib` to library targets is similarly optional.
 
-The third and final argument is a list of object files and libraries that will be linked to create the target file. Here, file extensions *are* required for libraries since they're mixed in with object files. The `LIST()` macro can also be used for this list since it too is expected to be NULL-terminated.
+The third argument is a list of object files and libraries that will be linked to create the target file. Here, libraries need to include their file extension so as to disambiguate them from object files. `LIST()` can be used here too since this list must also be NULL-terminated.
 
-Similar to `cflags`, there is a global `lflags` variable used by the linker.
+The global `lflags` variable is used to pass flags to the linker, with a behavior identical to `cflags`.
 
 ```c
 lflags = LIST("-lm");
 load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 ```
 
-`DYEXT` is macro defined to be the platform-specific file extension for dynamic libraries, to aid the portability of build files.
+`DYEXT` is a macro defined as the platform-specific file extension for dynamic libraries, to aid the portability of build files.
 
 ### Recursive builds
 
