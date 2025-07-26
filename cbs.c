@@ -77,8 +77,9 @@ void await(pid_t cpid, char *what, char *who) {
 
 	if (cpid == -1 || waitpid(cpid, &status, 0) == -1)
 		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
-	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS
-	    || WIFSIGNALED(status))
+	if (WIFSIGNALED(status))
+		errx(EXIT_FAILURE, "%s", strsignal(WTERMSIG(status)));
+	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
 		exit(EXIT_FAILURE);
 }
 
