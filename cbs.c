@@ -21,7 +21,7 @@
 
 extern char **environ;
 
-char **cflags, **lflags;
+char **cflags = NONE, **lflags = NONE;
 
 void *allocate(size_t s) {
 	void *r;
@@ -130,7 +130,7 @@ void load(char type, char *target, char **objs) {
 	case 's':
 		path = "/usr/bin/ar";
 		*p++ = "ar";
-		*p++ = "-r";
+		*p++ = "-rc";
 		target = extend(target, ".a");
 		a = p = (fp = p) + f;
 		break;
@@ -159,23 +159,18 @@ int after(struct stat astat, struct stat bstat) {
 }
 
 void build(char *path) {
-	char *absolute, *current, **c, **l;
-	struct stat exe, src;
-	int exists, self, leave;
+	char *absolute, *current;
 	pid_t cpid;
+	int self, exists, restart;
+	struct stat src, obj, exe;
 
 	if (!(absolute = realpath(path, NULL)))
 		err(EXIT_FAILURE, "Unable to resolve `%s'", path);
 	if (!(current = getcwd(NULL, 0)))
 		err(EXIT_FAILURE, "Unable to check current directory");
+	cpid = 0;
 
-	if ((self = strcmp(absolute, current) == 0)) {
-		if (stat("build.c", &src) == -1)
-			err(EXIT_FAILURE, "Unable to stat `build.c'");
-		if ((leave = (exists = stat("build", &exe) == 0) && after(exe, src))
-		    && utimensat(AT_FDCWD, "build.c", NULL, 0) == -1)
-			err(EXIT_FAILURE, "Unable to update `build.c' modification time");
-	} else {
+	if (!(self = strcmp(absolute, current) == 0)) {
 		if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
 		else if (cpid) await(cpid, "run", "build");
 
@@ -183,28 +178,25 @@ void build(char *path) {
 		printf("cd %s/\n", path);
 		if (chdir(path) == -1)
 			err(EXIT_FAILURE, "Unable to change directory to `%s'", path);
-
-		exists = stat("build", &exe) == 0;
-		leave = cpid;
 	}
 
-	free(current);
 	free(absolute);
+	free(current);
 
-	if (leave) return;
-	if (self || !exists) {
-		c = cflags;
-		l = lflags;
+	if (cpid) return;
 
-		cflags = NONE;
+	if (stat(current = "build.c", &src) == -1)
+		err(EXIT_FAILURE, "Unable to stat `build.c'");
+	if (stat("build.o", &obj) == -1) obj.TIME = (struct timespec){0};
+	if (!(exists = stat("build", &exe) != -1)) exe.TIME = (struct timespec){0};
+
+	if ((restart = after(src, obj) || after(exe, obj))
+	    && after(src, exe) && (self || !exists)) {
 		compile("build");
-
-		lflags = NONE;
 		load('x', "build", LIST("build"));
-
-		cflags = c;
-		lflags = l;
+		if (self) current = "build.o";
 	}
-
-	run("!build", LIST("build"), "run", "build");
+	if (utimensat(AT_FDCWD, current, NULL, 0) == -1)
+		err(EXIT_FAILURE, "Unable to update `%s' modification time", current);
+	if (restart) run("!build", LIST("build"), "run", "build");
 }

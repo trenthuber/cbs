@@ -14,10 +14,7 @@ To build a project, you first need to make a file called `build.c` which describ
 int main(void) {
     build("./");
 
-    cflags = NONE;
     compile("main");
-
-    lflags = NONE;
     load('x', "main", LIST("main"));
 
     return EXIT_SUCCESS;
@@ -29,6 +26,8 @@ Next, compile the build file and run the resulting executable, called `build`.
 ```console
 > cc -o build build.c
 > build
+cc -c -o build.o build.c
+cc -o build build.o
 cc -c -o main.o main.c
 cc -o main main.o
 > main
@@ -39,7 +38,7 @@ Every subsequent time you run `build`, it will rebuild the entire project, as we
 
 ```console
 > build
-cc -c -o build.o build.c                                                                                                                            
+cc -c -o build.o build.c
 cc -o build build.o
 cc -c -o main.o main.c
 cc -o main main.o
@@ -54,9 +53,9 @@ cbs tries to be as simple as possible, while still remaining powerful. Its simpl
 void compile(char *src);
 ```
 
-The `compile()` function is given a single source file to compile and will generate an object file with the same name. In general, file extensions in your build files are optional as they can usually be inferred based on the function being called. This has the added benefit of being able to reuse lists of file names for compiling and linking.
+The `compile()` function is given a single source file to compile and will generate an object file with the same name. In general, file extensions in your build files are optional as they can usually be inferred based on the function being called. This has the added benefit of allowing for the reuse of lists of file names for compiling and linking.
 
-Before you run `compile()`, the global `cflags` variable has to be initialized with a list of flags to pass to the compiler. If no flags are needed, than the `NONE` macro should be used; otherwise the `LIST()` macro can be used. The value of `cflags` doesn't change between calls to `compile()`, so the same flags can be used for multiple compilations without having to reinitialize.
+The global `cflags` variable can be assigned a list of flags to pass to the compiler using the `LIST()` macro. The value of `cflags` is maintained between calls to `compile()`, so the same flags can automatically be used for multiple translation units. If you want to clear the compiler flags, the `NONE` macro can be used.
 
 ```c
 cflags = LIST("-Wall", "-O3");
@@ -84,7 +83,7 @@ The second argument is the name of the target file. For similar reasons to `comp
 
 The third argument is a list of object files and libraries that will be linked to create the target file. Here, libraries need to include their file extension so as to disambiguate them from object files. `LIST()` can be used here too since this list must also be NULL-terminated.
 
-The global `lflags` variable is used to pass flags to the linker, with a behavior identical to `cflags`.
+The global `lflags` variable is used to pass flags to the linker in a way similar to `cflags`.
 
 ```c
 lflags = LIST("-lm");
@@ -99,12 +98,16 @@ load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 void build(char *path);
 ```
 
-The `build()` function allows one build executable to run another build executable. The name of the directory that contains the build executable being run is passed to the function by a relative or absolute path. You can think of this function as changing to that directory and running the build executable located therein. `build()` will only recompile the build file it if it can't find the build executable in that directory.
+The `build()` function allows one build executable to run another build executable. The name of the directory that contains the build executable being run is passed to the function by a relative or absolute path. You can think of this function as changing to that directory and running the build executable located therein. `build()` will only recompile the build file if the build executable doesn't exist in that directory.
 
-If the current directory is passed to `build()`, then it will *recompile its own build file* before rerunning *itself*. Thus, including a statement like `build("./");` at the beginning of your build file means you don't have to manually recompile that build file every time you modify it.
+If the current directory is passed to `build()`, then it will *recompile its own build file* before rerunning *itself*. Thus, including a statement like `build("./");` at the beginning of your build file means you don't have to manually recompile that build file whenever you modify it.
+
+`build()` uses the `cflags` and `lflags` variables whenever it recompiles build files. The value of each variable is maintained between calls to `build()`.
 
 ```c
 build("./");
 build("../../src/");
+
+cflags = LIST("-Iinclude/");
 build("/usr/local/project/src/");
 ```
