@@ -10,10 +10,12 @@
 
 #ifdef __APPLE__
 #define DYEXT ".dylib"
-#define TIME st_mtimespec
+#define SEC st_mtimespec.tv_sec
+#define NSEC st_mtimespec.tv_nsec
 #else
 #define DYEXT ".so"
-#define TIME st_mtim
+#define SEC st_mtim.tv_sec
+#define NSEC st_mtim.tv_nsec
 #endif
 
 #define NONE (char *[]){NULL}
@@ -77,8 +79,7 @@ void await(pid_t cpid, char *what, char *who) {
 
 	if (cpid == -1 || waitpid(cpid, &status, 0) == -1)
 		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
-	if (WIFSIGNALED(status))
-		errx(EXIT_FAILURE, "%s", strsignal(WTERMSIG(status)));
+	if (WIFSIGNALED(status)) errx(EXIT_FAILURE, "%s", strsignal(WTERMSIG(status)));
 	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
 		exit(EXIT_FAILURE);
 }
@@ -149,20 +150,11 @@ void load(char type, char *target, char **objs) {
 	free(args);
 }
 
-int after(struct stat astat, struct stat bstat) {
-	struct timespec a, b;
-
-	a = astat.TIME;
-	b = bstat.TIME;
-
-	return a.tv_sec == b.tv_sec ? a.tv_nsec > b.tv_nsec : a.tv_sec > b.tv_sec;
-}
-
 void build(char *path) {
 	char *absolute, *current;
 	pid_t cpid;
-	int self, exists, restart;
-	struct stat src, obj, exe;
+	int self, exists, rebuild;
+	struct stat src, exe;
 
 	if (!(absolute = realpath(path, NULL)))
 		err(EXIT_FAILURE, "Unable to resolve `%s'", path);
@@ -185,18 +177,15 @@ void build(char *path) {
 
 	if (cpid) return;
 
-	if (stat(current = "build.c", &src) == -1)
-		err(EXIT_FAILURE, "Unable to stat `build.c'");
-	if (stat("build.o", &obj) == -1) obj.TIME = (struct timespec){0};
-	if (!(exists = stat("build", &exe) != -1)) exe.TIME = (struct timespec){0};
-
-	if ((restart = after(src, obj) || after(exe, obj))
-	    && after(src, exe) && (self || !exists)) {
+	if (stat("build.c", &src) == -1) err(EXIT_FAILURE, "Unable to stat `build.c'");
+	if (!(exists = stat("build", &exe) != -1)) exe.SEC = 0;
+	rebuild = src.SEC == exe.SEC ? src.NSEC > exe.NSEC : src.SEC > exe.SEC;
+	
+	if (!self && !exists || self && rebuild) {
 		compile("build");
 		load('x', "build", LIST("build"));
-		if (self) current = "build.o";
 	}
-	if (utimensat(AT_FDCWD, current, NULL, 0) == -1)
-		err(EXIT_FAILURE, "Unable to update `%s' modification time", current);
-	if (restart) run("!build", LIST("build"), "run", "build");
+	if (!self || rebuild) run("!build", LIST("build"), "run", "build");
+	if (utimensat(AT_FDCWD, "build.c", NULL, 0) == -1)
+		err(EXIT_FAILURE, "Unable to update `build.c' modification time");
 }

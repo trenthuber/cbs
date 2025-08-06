@@ -26,8 +26,6 @@ Next, compile the build file and run the resulting executable, called `build`.
 ```console
 > cc -o build build.c
 > build
-cc -c -o build.o build.c
-cc -o build build.o
 cc -c -o main.o main.c
 cc -o main main.o
 > main
@@ -102,12 +100,8 @@ The `build()` function allows one build executable to run another build executab
 
 If the current directory is passed to `build()`, then it will *recompile its own build file* before rerunning *itself*. Thus, including a statement like `build("./");` at the beginning of your build file means you don't have to manually recompile that build file whenever you modify it.
 
-`build()` uses the `cflags` and `lflags` variables whenever it recompiles build files. The value of each variable is maintained between calls to `build()`.
-
 ```c
 build("./");
 build("../../src/");
-
-cflags = LIST("-Iinclude/");
 build("/usr/local/project/src/");
 ```
