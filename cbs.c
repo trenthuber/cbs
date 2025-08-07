@@ -152,15 +152,14 @@ void load(char type, char *target, char **objs) {
 
 void build(char *path) {
 	char *absolute, *current;
-	pid_t cpid;
 	int self, exists, rebuild;
+	pid_t cpid;
 	struct stat src, exe;
 
 	if (!(absolute = realpath(path, NULL)))
 		err(EXIT_FAILURE, "Unable to resolve `%s'", path);
 	if (!(current = getcwd(NULL, 0)))
 		err(EXIT_FAILURE, "Unable to check current directory");
-	cpid = 0;
 
 	if (!(self = strcmp(absolute, current) == 0)) {
 		if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
@@ -170,7 +169,7 @@ void build(char *path) {
 		printf("cd %s/\n", path);
 		if (chdir(path) == -1)
 			err(EXIT_FAILURE, "Unable to change directory to `%s'", path);
-	}
+	} else cpid = 0;
 
 	free(absolute);
 	free(current);
