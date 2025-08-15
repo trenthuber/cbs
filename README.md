@@ -4,7 +4,7 @@ cbs is an extremely lightweight build system designed specifically for C project
 
 ## Overview
 
-To build a project, you first need to make a file called `build.c` which describes what to build.
+To build a project, you first need to create a file `build.c` which describes the build.
 
 ```c
 // build.c
@@ -21,7 +21,7 @@ int main(void) {
 }
 ```
 
-Next, compile the build file and run the resulting executable, called `build`.
+Next, compile the build file and run the resulting `build` executable.
 
 ```console
 > cc -o build build.c
@@ -79,7 +79,7 @@ The first argument tells `load()` the type of target file to generate.
 
 The second argument is the name of the target file. For similar reasons to `compile()`, file extensions are optional for the target. Prepending `lib` to library targets is similarly optional.
 
-The third argument is a list of object files and libraries that will be linked to create the target file. Here, libraries need to include their file extension so as to disambiguate them from object files. `LIST()` can be used here too since this list must also be NULL-terminated.
+The third argument is a list of object files and libraries that will be linked to create the target file. Here, libraries need to include their file extension so as to disambiguate them from object files. `LIST()` can be used here too since this list is also expected to be NULL-terminated.
 
 The global `lflags` variable is used to pass flags to the linker in a way similar to `cflags`.
 
@@ -96,7 +96,7 @@ load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 void build(char *path);
 ```
 
-The `build()` function allows one build executable to run another build executable. The name of the directory that contains the build executable being run is passed to the function by a relative or absolute path. You can think of this function as changing to that directory and running the build executable located therein. `build()` will only recompile the build file if the build executable doesn't exist in that directory.
+The `build()` function allows one build executable to run another build executable. The directory that contains the build executable to run is passed to the function by its relative or absolute path. This function will quite literally change to that directory and run the build executable located therein. `build()` will only recompile the build file before running the build executable if that build executable doesn't already exist.
 
 If the current directory is passed to `build()`, then it will *recompile its own build file* before rerunning *itself*. Thus, including a statement like `build("./");` at the beginning of your build file means you don't have to manually recompile that build file whenever you modify it.
 

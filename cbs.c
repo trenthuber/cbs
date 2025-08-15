@@ -115,8 +115,8 @@ void load(char type, char *target, char **objs) {
 
 	for (o = 0; objs[o]; ++o);
 	for (f = 0; lflags[f]; ++f);
-	args = allocate((3 + o + 1 + f + 1) * sizeof*args);
-	fp = (a = (p = args) + 3) + o;
+	p = args = allocate((3 + o + 1 + f + 1) * sizeof*args);
+	fp = (a = p + 3) + o;
 
 	switch (type) {
 	case 'd':
@@ -165,8 +165,7 @@ void build(char *path) {
 		if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
 		else if (cpid) await(cpid, "run", "build");
 
-		path = cpid ? current : absolute;
-		printf("cd %s/\n", path);
+		printf("cd %s/\n", path = cpid ? current : absolute);
 		if (chdir(path) == -1)
 			err(EXIT_FAILURE, "Unable to change directory to `%s'", path);
 	} else cpid = 0;
@@ -179,12 +178,13 @@ void build(char *path) {
 	if (stat("build.c", &src) == -1) err(EXIT_FAILURE, "Unable to stat `build.c'");
 	if (!(exists = stat("build", &exe) != -1)) exe.SEC = 0;
 	rebuild = src.SEC == exe.SEC ? src.NSEC > exe.NSEC : src.SEC > exe.SEC;
-	
+
 	if (!self && !exists || self && rebuild) {
 		compile("build");
 		load('x', "build", LIST("build"));
 	}
 	if (!self || rebuild) run("!build", LIST("build"), "run", "build");
+
 	if (utimensat(AT_FDCWD, "build.c", NULL, 0) == -1)
 		err(EXIT_FAILURE, "Unable to update `build.c' modification time");
 }
