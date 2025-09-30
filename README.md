@@ -7,7 +7,7 @@ cbs is an extremely lightweight build system designed specifically for C project
 To build a project, you first need to create a file `build.c` which describes the build.
 
 ```c
-// build.c
+/* build.c */
 
 #include "cbs.c"
 
