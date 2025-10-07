@@ -1,10 +1,12 @@
 # cbs
 
-cbs is an extremely lightweight build system designed specifically for C projects. 
+cbs is an extremely lightweight build system designed specifically for C
+projects.
 
 ## Overview
 
-To build a project, you first need to create a file `build.c` which describes the build.
+To build a project, you first need to create a file `build.c` which describes
+the build.
 
 ```c
 /* build.c */
@@ -32,7 +34,8 @@ cc -o main main.o
 Hello, world!
 ```
 
-Every subsequent time you run `build`, it will rebuild the entire project, as well as itself.
+Every subsequent time you run `build`, it will rebuild the entire project, as
+well as itself.
 
 ```console
 > build
@@ -43,7 +46,10 @@ cc -o main main.o
 ```
 
 ## Detailed usage
-cbs tries to be as simple as possible, while still remaining powerful. Its simplicity is rooted in its intentionally limited scope of only building C projects. Thus, cbs only needs to compile and link C code, as well as call other build executables.
+cbs tries to be as simple as possible, while still remaining powerful. Its
+simplicity is rooted in its intentionally limited scope of only building C
+projects. Thus, cbs only needs to compile and link C code, as well as call
+other build executables.
 
 ### Compiling source files
 
@@ -51,9 +57,17 @@ cbs tries to be as simple as possible, while still remaining powerful. Its simpl
 void compile(char *src);
 ```
 
-The `compile()` function is given a single source file to compile and will generate an object file with the same name. In general, file extensions in your build files are optional as they can usually be inferred based on the function being called. This has the added benefit of allowing for the reuse of lists of file names for compiling and linking.
+The `compile()` function is given a single source file to compile and will
+generate an object file with the same name. In general, file extensions in your
+build files are optional as they can usually be inferred based on the function
+being called. This has the added benefit of allowing for the reuse of lists of
+file names for compiling and linking.
 
-The global `cflags` variable can be assigned a list of flags to pass to the compiler using the `LIST()` macro. The value of `cflags` is maintained between calls to `compile()`, so the same flags can automatically be used for multiple translation units. If you want to clear the compiler flags, the `NONE` macro can be used.
+The global `cflags` variable can be assigned a list of flags to pass to the
+compiler using the `LIST()` macro. The value of `cflags` is maintained between
+calls to `compile()`, so the same flags can automatically be used for multiple
+translation units. If you want to clear the compiler flags, the `NONE` macro
+can be used.
 
 ```c
 cflags = LIST("-Wall", "-O3");
@@ -61,7 +75,10 @@ compile("main");
 ```
 
 > [!NOTE]
-> It is not guaranteed that the object code cbs produces will be position-independent. When compiling source files that will be used in a dynamic library, you will need to include `-fPIC` in your compiler flags to ensure compatibility between platforms.
+> It is not guaranteed that the object code cbs produces will be
+position-independent. When compiling source files that will be used in a dynamic
+library, you will need to include `-fPIC` in your compiler flags to ensure
+compatibility between platforms.
 
 ### Linking object files
 
@@ -77,18 +94,25 @@ The first argument tells `load()` the type of target file to generate.
 'd' - dynamic library
 ```
 
-The second argument is the name of the target file. For similar reasons to `compile()`, file extensions are optional for the target. Prepending `lib` to library targets is similarly optional.
+The second argument is the name of the target file. For similar reasons to
+`compile()`, file extensions are optional for the target. Prepending `lib` to
+library targets is similarly optional.
 
-The third argument is a list of object files and libraries that will be linked to create the target file. Here, libraries need to include their file extension so as to disambiguate them from object files. `LIST()` can be used here too since this list is also expected to be NULL-terminated.
+The third argument is a list of object files and libraries that will be linked
+to create the target file. Here, libraries need to include their file extension
+so as to disambiguate them from object files. `LIST()` can be used here too
+since this list is also expected to be NULL-terminated.
 
-The global `lflags` variable is used to pass flags to the linker in a way similar to `cflags`.
+The global `lflags` variable is used to pass flags to the linker in a way
+similar to `cflags`.
 
 ```c
 lflags = LIST("-lm");
 load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 ```
 
-`DYEXT` is a macro defined as the platform-specific file extension for dynamic libraries, to aid the portability of build files.
+`DYEXT` is a macro defined as the platform-specific file extension for dynamic
+libraries, to aid the portability of build files.
 
 ### Recursive builds
 
@@ -96,9 +120,17 @@ load('s', "main", LIST("first" DYEXT, "second", "third.a"));
 void build(char *path);
 ```
 
-The `build()` function allows one build executable to run another build executable. The directory that contains the build executable to run is passed to the function by its relative or absolute path. This function will quite literally change to that directory and run the build executable located therein. `build()` will only recompile the build file before running the build executable if that build executable doesn't already exist.
+The `build()` function allows one build executable to run another build
+executable. The directory that contains the build executable to run is passed to
+the function by its relative or absolute path. This function will quite
+literally change to that directory and run the build executable located therein.
+`build()` will only recompile the build file before running the build executable
+if that build executable doesn't already exist.
 
-If the current directory is passed to `build()`, then it will *recompile its own build file* before rerunning *itself*. Thus, including a statement like `build("./");` at the beginning of your build file means you don't have to manually recompile that build file whenever you modify it.
+If the current directory is passed to `build()`, then it will *recompile its own
+build file* before rerunning *itself*. Thus, including a statement like
+`build("./");` at the beginning of your build file means you don't have to
+manually recompile that build file whenever you modify it.
 
 ```c
 build("./");
