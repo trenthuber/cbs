@@ -100,7 +100,7 @@ void compile(char *src) {
 	*p++ = src = extend(src, ".c");
 
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
-	else if (!cpid) run("/usr/bin/cc", args, "compile", src);
+	if (!cpid) run("/usr/bin/cc", args, "compile", src);
 	await(cpid, "compile", src);
 
 	free(obj);
@@ -143,7 +143,7 @@ void load(char type, char *target, char **objs) {
 	for (f = 0; lflags[f]; *fp++ = lflags[f++]);
 
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
-	else if (!cpid) run(path, args, "link", target);
+	if (!cpid) run(path, args, "link", target);
 	await(cpid, "link", target);
 
 	while (a < p) free(*a++);
@@ -163,7 +163,7 @@ void build(char *path) {
 
 	if (!(self = strcmp(absolute, current) == 0)) {
 		if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
-		else if (cpid) await(cpid, "run", "build");
+		if (cpid) await(cpid, "run", "build");
 
 		printf("cd %s/\n", path = cpid ? current : absolute);
 		if (chdir(path) == -1)
