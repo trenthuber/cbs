@@ -25,12 +25,12 @@ extern char **environ;
 
 char **cflags = NONE, **lflags = NONE;
 
-void *allocate(size_t s) {
+void *allocate(size_t num, size_t size) {
 	void *r;
 
-	if (!(r = malloc(s))) err(EXIT_FAILURE, "Memory allocation");
+	if (!(r = calloc(num, size))) err(EXIT_FAILURE, "Memory allocation");
 
-	return memset(r, 0, s);
+	return r;
 }
 
 char *extend(char *path, char *ext) {
@@ -51,7 +51,7 @@ char *extend(char *path, char *ext) {
 	l = (strcmp(e, ".a") == 0 || strcmp(e, DYEXT) == 0)
 	    && (b <= 3 || strncmp(bp, "lib", 3) != 0) ? 3 : 0;
 
-	r = allocate(d + l + b + strlen(e) + 1);
+	r = allocate(d + l + b + strlen(e) + 1, sizeof*r);
 	strncat(r, dp, d);
 	strncat(r, "lib", l);
 	strncat(r, bp, b);
@@ -90,7 +90,7 @@ void compile(char *src) {
 	pid_t cpid;
 
 	for (f = 0; cflags[f]; ++f);
-	p = args = allocate((2 + f + 3 + 1) * sizeof*args);
+	p = args = allocate(2 + f + 3 + 1, sizeof*args);
 
 	*p++ = "cc";
 	*p++ = "-c";
@@ -115,7 +115,7 @@ void load(char type, char *target, char **objs) {
 
 	for (o = 0; objs[o]; ++o);
 	for (f = 0; lflags[f]; ++f);
-	p = args = allocate((3 + o + 1 + f + 1) * sizeof*args);
+	p = args = allocate(3 + o + 1 + f + 1, sizeof*args);
 	fp = (a = p + 3) + o;
 
 	switch (type) {
