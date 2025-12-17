@@ -46,6 +46,7 @@ cc -o main main.o
 ```
 
 ## Detailed usage
+
 cbs tries to be as simple as possible, while still remaining powerful. Its
 simplicity is rooted in its intentionally limited scope of only building C
 projects. Thus, cbs only needs to compile and link C code, as well as call
