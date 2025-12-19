@@ -25,39 +25,32 @@ extern char **environ;
 
 char **cflags = NONE, **lflags = NONE;
 
-void *allocate(size_t num, size_t size) {
-	void *r;
-
-	if (!(r = calloc(num, size))) err(EXIT_FAILURE, "Memory allocation");
-
-	return r;
-}
-
 char *extend(char *path, char *ext) {
 	char *bp, *e, *dp, *r;
 	size_t b, d, l;
 
-	bp = (bp = strrchr(path, '/')) ? bp + 1 : path;
+	bp = (bp = strrchr(dp = path, '/')) ? bp + 1 : path;
+	d = bp - path;
 	b = (e = strrchr(bp, '.')) ? e - bp : (e = ext, strlen(bp));
 	if (*ext == '!') e = ext + 1;
-	d = bp - path;
 	if (strcmp(e, DYEXT) == 0) {
-		if (!(dp = realpath(path = d ? strndup(path, d) : strdup("./"), NULL)))
-			err(EXIT_FAILURE, "Unable to get the absolute path of `%s'", path);
-		free(path);
+		if (!(dp = realpath(path = d ? strndup(path, d) : "./", NULL)))
+			err(EXIT_FAILURE, "Unable to resolve `%s'", path);
+		if (d) free(path);
 		d = strlen(dp);
 		dp[d++] = '/';
-	} else dp = strdup(path);
+	}
 	l = (strcmp(e, ".a") == 0 || strcmp(e, DYEXT) == 0)
 	    && (b <= 3 || strncmp(bp, "lib", 3) != 0) ? 3 : 0;
 
-	r = allocate(d + l + b + strlen(e) + 1, sizeof*r);
+	if (!(r = calloc(d + l + b + strlen(e) + 1, sizeof*r)))
+		err(EXIT_FAILURE, "Memory allocation");
 	strncat(r, dp, d);
 	strncat(r, "lib", l);
 	strncat(r, bp, b);
 	strcat(r, e);
 
-	free(dp);
+	if (strcmp(e, DYEXT) == 0) free(dp);
 
 	return r;
 }
@@ -90,7 +83,8 @@ void compile(char *src) {
 	pid_t cpid;
 
 	for (f = 0; cflags[f]; ++f);
-	p = args = allocate(2 + f + 3 + 1, sizeof*args);
+	if (!(p = args = calloc(2 + f + 3 + 1, sizeof*args)))
+		err(EXIT_FAILURE, "Memory allocation");
 
 	*p++ = "cc";
 	*p++ = "-c";
@@ -103,8 +97,8 @@ void compile(char *src) {
 	if (!cpid) run("/usr/bin/cc", args, "compile", src);
 	await(cpid, "compile", src);
 
-	free(obj);
 	free(src);
+	free(obj);
 	free(args);
 }
 
@@ -115,7 +109,8 @@ void load(char type, char *target, char **objs) {
 
 	for (o = 0; objs[o]; ++o);
 	for (f = 0; lflags[f]; ++f);
-	p = args = allocate(3 + o + 1 + f + 1, sizeof*args);
+	if (!(p = args = calloc(3 + o + 1 + f + 1, sizeof*args)))
+		err(EXIT_FAILURE, "Memory allocation");
 	fp = (a = p + 3) + o;
 
 	switch (type) {
@@ -170,8 +165,8 @@ void build(char *path) {
 			err(EXIT_FAILURE, "Unable to change directory to `%s'", path);
 	} else cpid = 0;
 
-	free(absolute);
 	free(current);
+	free(absolute);
 
 	if (cpid) return;
 
