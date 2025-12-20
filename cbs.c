@@ -29,12 +29,12 @@ char *extend(char *path, char *ext) {
 	char *bp, *e, *dp, *r;
 	size_t b, d, l;
 
-	bp = (bp = strrchr(dp = path, '/')) ? bp + 1 : path;
-	d = bp - path;
+	bp = (bp = strrchr(dp = path, '/')) ? bp + 1 : dp;
+	d = bp - dp;
 	b = (e = strrchr(bp, '.')) ? e - bp : (e = ext, strlen(bp));
-	if (*ext == '!') e = ext + 1;
+	if (ext[0] == '!') e = ext + 1;
 	if (strcmp(e, DYEXT) == 0) {
-		if (!(dp = realpath(path = d ? strndup(path, d) : "./", NULL)))
+		if (!(dp = realpath(path = d ? strndup(dp, d) : "./", NULL)))
 			err(EXIT_FAILURE, "Unable to resolve `%s'", path);
 		if (d) free(path);
 		d = strlen(dp);
@@ -58,7 +58,7 @@ char *extend(char *path, char *ext) {
 void run(char *file, char **args, char *what, char *who) {
 	size_t i;
 
-	if (*file != '!') for (i = 0; args[i]; ++i) {
+	if (file[0] != '!') for (i = 0; args[i]; ++i) {
 		fputs(args[i], stdout);
 		putchar(args[i + 1] ? ' ' : '\n');
 	} else ++file;
