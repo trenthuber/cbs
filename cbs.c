@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/errno.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -25,34 +26,35 @@ extern char **environ;
 
 char **cflags = NONE, **lflags = NONE;
 
-char *extend(char *path, char *ext) {
-	char *bp, *e, *dp, *r;
-	size_t b, d, l;
+char *extend(char *path, char *altext) {
+	char *dir, *base, *ext, *result;
+	size_t d, b, l;
 
-	bp = (bp = strrchr(dp = path, '/')) ? bp + 1 : dp;
-	d = bp - dp;
-	b = (e = strrchr(bp, '.')) ? e - bp : (e = ext, strlen(bp));
-	if (ext[0] == '!') e = ext + 1;
-	if (strcmp(e, DYEXT) == 0) {
-		if (!(dp = realpath(path = d ? strndup(dp, d) : "./", NULL)))
-			err(EXIT_FAILURE, "Unable to resolve `%s'", path);
+	base = (base = strrchr(dir = path, '/')) ? base + 1 : dir;
+	d = base - dir;
+	b = (ext = strrchr(base, '.')) ? ext - base : (ext = altext, strlen(base));
+	if (altext[0] == '!') ext = altext + 1;
+	if (strcmp(ext, DYEXT) == 0) {
+		if (!(dir = realpath(path = d ? strndup(dir, d) : "./", NULL)))
+			err(errno, "Unable to resolve `%s'", path);
 		if (d) free(path);
-		d = strlen(dp);
-		dp[d++] = '/';
+		d = strlen(dir);
+		dir[d++] = '/';
 	}
-	l = (strcmp(e, ".a") == 0 || strcmp(e, DYEXT) == 0)
-	    && (b <= 3 || strncmp(bp, "lib", 3) != 0) ? 3 : 0;
+	if (b > (l = 3) && strncmp(base, "lib", l) == 0
+	    || strcmp(ext, ".a") != 0 && strcmp(ext, DYEXT) != 0)
+		l = 0;
 
-	if (!(r = calloc(d + l + b + strlen(e) + 1, sizeof*r)))
-		err(EXIT_FAILURE, "Memory allocation");
-	strncat(r, dp, d);
-	strncat(r, "lib", l);
-	strncat(r, bp, b);
-	strcat(r, e);
+	if (!(result = calloc(d + l + b + strlen(ext) + 1, sizeof*result)))
+		err(errno, "Memory allocation");
+	strncat(result, dir, d);
+	strncat(result, "lib", l);
+	strncat(result, base, b);
+	strcat(result, ext);
 
-	if (strcmp(e, DYEXT) == 0) free(dp);
+	if (strcmp(ext, DYEXT) == 0) free(dir);
 
-	return r;
+	return result;
 }
 
 void run(char *file, char **args, char *what, char *who) {
@@ -64,17 +66,18 @@ void run(char *file, char **args, char *what, char *who) {
 	} else ++file;
 
 	if (execve(file, args, environ) == -1)
-		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
+		err(errno, "Unable to %s `%s'", what, who);
 }
 
 void await(pid_t cpid, char *what, char *who) {
 	int status;
 
 	if (cpid == -1 || waitpid(cpid, &status, 0) == -1)
-		err(EXIT_FAILURE, "Unable to %s `%s'", what, who);
-	if (WIFSIGNALED(status)) errx(EXIT_FAILURE, "%s", strsignal(WTERMSIG(status)));
+		err(errno, "Unable to %s `%s'", what, who);
+	if (WIFSIGNALED(status))
+		errx(WTERMSIG(status), "%s", strsignal(WTERMSIG(status)));
 	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS)
-		exit(EXIT_FAILURE);
+		exit(WEXITSTATUS(status));
 }
 
 void compile(char *src) {
@@ -84,7 +87,7 @@ void compile(char *src) {
 
 	for (f = 0; cflags[f]; ++f);
 	if (!(p = args = calloc(2 + f + 3 + 1, sizeof*args)))
-		err(EXIT_FAILURE, "Memory allocation");
+		err(errno, "Memory allocation");
 
 	*p++ = "cc";
 	*p++ = "-c";
@@ -93,7 +96,7 @@ void compile(char *src) {
 	*p++ = obj = extend(src, "!.o");
 	*p++ = src = extend(src, ".c");
 
-	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
+	if ((cpid = fork()) == -1) err(errno, "Unable to fork");
 	if (!cpid) run("/usr/bin/cc", args, "compile", src);
 	await(cpid, "compile", src);
 
@@ -110,7 +113,7 @@ void load(char type, char *target, char **objs) {
 	for (o = 0; objs[o]; ++o);
 	for (f = 0; lflags[f]; ++f);
 	if (!(p = args = calloc(3 + o + 1 + f + 1, sizeof*args)))
-		err(EXIT_FAILURE, "Memory allocation");
+		err(errno, "Memory allocation");
 	fp = (a = p + 3) + o;
 
 	switch (type) {
@@ -137,7 +140,7 @@ void load(char type, char *target, char **objs) {
 	for (o = 0; objs[o]; *p++ = extend(objs[o++], ".o"));
 	for (f = 0; lflags[f]; *fp++ = lflags[f++]);
 
-	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
+	if ((cpid = fork()) == -1) err(errno, "Unable to fork");
 	if (!cpid) run(path, args, "link", target);
 	await(cpid, "link", target);
 
@@ -152,17 +155,16 @@ void build(char *path) {
 	struct stat src, exe;
 
 	if (!(absolute = realpath(path, NULL)))
-		err(EXIT_FAILURE, "Unable to resolve `%s'", path);
+		err(errno, "Unable to resolve `%s'", path);
 	if (!(current = getcwd(NULL, 0)))
-		err(EXIT_FAILURE, "Unable to check current directory");
+		err(errno, "Unable to check current directory");
 
 	if (!(self = strcmp(absolute, current) == 0)) {
-		if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
+		if ((cpid = fork()) == -1) err(errno, "Unable to fork");
 		if (cpid) await(cpid, "run", "build");
 
 		printf("cd %s/\n", path = cpid ? current : absolute);
-		if (chdir(path) == -1)
-			err(EXIT_FAILURE, "Unable to change directory to `%s'", path);
+		if (chdir(path) == -1) err(errno, "Unable to change directory to `%s'", path);
 	} else cpid = 0;
 
 	free(current);
@@ -170,16 +172,16 @@ void build(char *path) {
 
 	if (cpid) return;
 
-	if (stat("build.c", &src) == -1) err(EXIT_FAILURE, "Unable to stat `build.c'");
+	if (stat("build.c", &src) == -1) err(errno, "Unable to stat `build.c'");
 	if (!(exists = stat("build", &exe) != -1)) exe.SEC = 0;
 	rebuild = src.SEC == exe.SEC ? src.NSEC > exe.NSEC : src.SEC > exe.SEC;
 
-	if (!self && !exists || self && rebuild) {
+	if (self ? rebuild : !exists) {
 		compile("build");
 		load('x', "build", LIST("build"));
 	}
 	if (!self || rebuild) run("!build", LIST("build"), "run", "build");
 
 	if (utimensat(AT_FDCWD, "build.c", NULL, 0) == -1)
-		err(EXIT_FAILURE, "Unable to update `build.c' modification time");
+		err(errno, "Unable to update `build.c' modification time");
 }
